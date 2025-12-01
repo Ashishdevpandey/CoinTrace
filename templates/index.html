@@ -668,35 +668,89 @@
     <script>
         // State
         let charts = {};
-        // Determine API Base URL
-        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:5000' : '';
+
+        // Local Database Logic
+        const DB_KEY = 'cointrace_data_v1';
+
+        const LocalDB = {
+            getData: () => {
+                const data = localStorage.getItem(DB_KEY);
+                return data ? JSON.parse(data) : null;
+            },
+            saveData: (data) => {
+                localStorage.setItem(DB_KEY, JSON.stringify(data));
+            },
+            init: () => {
+                if (!LocalDB.getData()) {
+                    LocalDB.seed();
+                }
+            },
+            seed: () => {
+                const initialData = {
+                    customers: [{ id: 1, name: "ASHISH PANDEY", email: "ashisdvpandey@gmail.com" }],
+                    accounts: [
+                        { id: 1, customer_id: 1, type: "Checking", balance: 5000.00 },
+                        { id: 2, customer_id: 1, type: "Savings", balance: 12000.00 }
+                    ],
+                    transactions: []
+                };
+
+                // Seed Transactions
+                const categories = ['Food', 'Transport', 'Utilities', 'Entertainment', 'Salary', 'Shopping'];
+                for (let i = 0; i < 50; i++) {
+                    const t_type = Math.random() > 0.3 ? 'debit' : 'credit';
+                    let amount = Math.round((Math.random() * (500 - 10) + 10) * 100) / 100;
+                    let category;
+
+                    if (t_type === 'credit') {
+                        amount = Math.round((Math.random() * (3000 - 1000) + 1000) * 100) / 100;
+                        category = 'Salary';
+                    } else {
+                        category = categories[Math.floor(Math.random() * categories.length)];
+                        if (category === 'Salary') category = 'Food'; // Fix if random picked Salary for debit
+                    }
+
+                    const days_ago = Math.floor(Math.random() * 180);
+                    const date = new Date();
+                    date.setDate(date.getDate() - days_ago);
+
+                    initialData.transactions.push({
+                        id: i + 1,
+                        account_id: 1, // Default to checking
+                        date: date.toISOString(),
+                        amount: amount,
+                        type: t_type,
+                        category: category,
+                        description: `${t_type} transaction for ${category}`
+                    });
+                }
+                
+                // Sort transactions by date desc
+                initialData.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                LocalDB.saveData(initialData);
+                console.log("Database seeded!");
+            }
+        };
 
         // Initialization
         document.addEventListener('DOMContentLoaded', () => {
-            fetchSummary();
-            fetchTransactions();
-            showSection('dashboard'); // Show dashboard by default
+            LocalDB.init();
+            loadDashboard();
+            showSection('dashboard');
         });
 
         // Navigation
         function showSection(sectionId) {
-            // Hide all sections
             document.querySelectorAll('.section').forEach(el => el.style.display = 'none');
-            // Show target section
             document.getElementById(sectionId).style.display = 'block';
 
-            // Update Nav
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            // Find the nav item corresponding to the sectionId and add 'active' class
             const activeNavItem = document.querySelector(`.nav-item[onclick*="showSection('${sectionId}')"]`);
-            if (activeNavItem) {
-                activeNavItem.classList.add('active');
-            }
+            if (activeNavItem) activeNavItem.classList.add('active');
 
-            // Update Header
             document.getElementById('pageTitle').textContent = sectionId.charAt(0).toUpperCase() + sectionId.slice(1);
 
-            // Close sidebar on mobile when navigating
             if (window.innerWidth <= 1024) {
                 document.getElementById('sidebar').classList.remove('active');
                 document.querySelector('.sidebar-overlay').classList.remove('active');
@@ -708,91 +762,100 @@
             document.querySelector('.sidebar-overlay').classList.toggle('active');
         }
 
-        // Fix for nav item active state when clicking
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', function (e) {
-                e.preventDefault(); // Prevent default anchor behavior
-                // The showSection function already handles setting the active class
-                // and updating the page title, so no need to duplicate here.
-                // The onclick attribute on the anchor tag will call showSection.
+        // Data Loading & Processing
+        function loadDashboard() {
+            const db = LocalDB.getData();
+            if (!db) return;
+
+            // Calculate Totals
+            const totalBalance = db.accounts.reduce((sum, acc) => sum + acc.balance, 0);
+            
+            // Monthly Stats
+            const monthlyStats = {};
+            const spendingByCategory = {};
+
+            db.transactions.forEach(t => {
+                const date = new Date(t.date);
+                const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+                if (!monthlyStats[monthKey]) monthlyStats[monthKey] = { month: monthKey, income: 0, expense: 0 };
+                
+                if (t.type === 'credit') {
+                    monthlyStats[monthKey].income += t.amount;
+                } else {
+                    monthlyStats[monthKey].expense += t.amount;
+                    
+                    // Category Spending
+                    if (!spendingByCategory[t.category]) spendingByCategory[t.category] = 0;
+                    spendingByCategory[t.category] += t.amount;
+                }
             });
-        });
 
+            const monthlyStatsArray = Object.values(monthlyStats).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 6);
+            const spendingByCategoryArray = Object.entries(spendingByCategory).map(([k, v]) => ({ category: k, total: v }));
 
-        // API Calls
-        async function fetchSummary() {
-            try {
-                const res = await fetch(`${API_BASE}/api/summary`);
-                if (!res.ok) throw new Error('Failed to fetch summary');
-                const data = await res.json();
-                updateDashboard(data);
-            } catch (error) {
-                console.error('Error fetching summary:', error);
-                showError('Failed to connect to the backend. Please ensure app.py is running.');
-            }
-        }
-
-        async function fetchTransactions() {
-            try {
-                const res = await fetch(`${API_BASE}/api/transactions`);
-                if (!res.ok) throw new Error('Failed to fetch transactions');
-                const data = await res.json();
-                renderTransactions(data);
-                renderAnalytics(data); // Also render for analytics view
-            } catch (error) {
-                console.error('Error fetching transactions:', error);
-            }
-        }
-
-        function showError(message) {
-            // Simple toast or alert
-            const div = document.createElement('div');
-            div.style.position = 'fixed';
-            div.style.bottom = '20px';
-            div.style.left = '50%';
-            div.style.transform = 'translateX(-50%)';
-            div.style.background = '#ef4444';
-            div.style.color = 'white';
-            div.style.padding = '1rem 2rem';
-            div.style.borderRadius = '0.5rem';
-            div.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-            div.style.zIndex = '2000';
-            div.textContent = message;
-            document.body.appendChild(div);
-            setTimeout(() => div.remove(), 5000);
+            updateDashboard({
+                total_balance: totalBalance,
+                monthly_stats: monthlyStatsArray,
+                spending_by_category: spendingByCategoryArray,
+                transactions: db.transactions
+            });
         }
 
         // UI Updates
         function updateDashboard(data) {
-            // Update Cards
             document.getElementById('totalBalance').textContent = formatCurrency(data.total_balance);
 
-            // Calculate Monthly Spending (Simple sum of last month's expense from stats)
             const lastMonth = data.monthly_stats[0];
             if (lastMonth) {
                 document.getElementById('monthlySpending').textContent = formatCurrency(lastMonth.expense);
             }
 
-            // Update Charts
             renderMainChart(data.monthly_stats);
             renderPieChart(data.spending_by_category);
-            renderAnalyticsChart(data.monthly_stats); // Render analytics chart
+            renderAnalyticsChart(data.monthly_stats);
+            
+            renderTransactions(data.transactions);
+            renderAnalytics(data.transactions);
+            
+            // Update Accounts UI
+            const db = LocalDB.getData();
+            const checking = db.accounts.find(a => a.type === 'Checking');
+            const savings = db.accounts.find(a => a.type === 'Savings');
+            
+            // Hardcoded update for demo purposes based on seed structure
+            if(checking) {
+                 // Find the card with "Checking Account" and update value
+                 const cards = document.querySelectorAll('#accounts .card');
+                 cards.forEach(card => {
+                     if(card.innerText.includes('Checking Account')) {
+                         card.querySelector('.card-value').textContent = formatCurrency(checking.balance);
+                     }
+                 });
+            }
+            if(savings) {
+                 const cards = document.querySelectorAll('#accounts .card');
+                 cards.forEach(card => {
+                     if(card.innerText.includes('Savings Account')) {
+                         card.querySelector('.card-value').textContent = formatCurrency(savings.balance);
+                     }
+                 });
+            }
         }
 
         function renderTransactions(transactions) {
             const tbody = document.getElementById('transactionTable');
-            if (transactions.length === 0) {
+            if (!transactions || transactions.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-secondary);">No transactions found</td></tr>';
                 return;
             }
-            // Show only first 5 on dashboard
             const recent = transactions.slice(0, 5);
             tbody.innerHTML = generateTableRows(recent);
         }
 
         function renderAnalytics(transactions) {
             const tbody = document.getElementById('analyticsTable');
-            if (transactions.length === 0) {
+            if (!transactions || transactions.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-secondary);">No transactions found</td></tr>';
                 return;
             }
@@ -821,7 +884,7 @@
             `).join('');
         }
 
-        // Charts Logic
+        // Charts Logic (Same as before)
         function renderMainChart(data) {
             const ctx = document.getElementById('mainChart').getContext('2d');
             const labels = data.map(d => d.month).reverse();
@@ -867,7 +930,6 @@
 
         function renderPieChart(data) {
             const ctx = document.getElementById('pieChart').getContext('2d');
-
             if (charts.pie) charts.pie.destroy();
 
             charts.pie = new Chart(ctx, {
@@ -940,28 +1002,45 @@
         }
 
         // Form Handling
-        document.getElementById('transactionForm').addEventListener('submit', async (e) => {
+        document.getElementById('transactionForm').addEventListener('submit', (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.amount = parseFloat(data.amount);
 
             try {
-                const res = await fetch(`${API_BASE}/api/transaction`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
+                const db = LocalDB.getData();
+                
+                // Add Transaction
+                const newTransaction = {
+                    id: db.transactions.length + 1,
+                    account_id: 1, // Default
+                    date: new Date().toISOString(),
+                    amount: data.amount,
+                    type: data.type,
+                    category: data.category,
+                    description: data.description
+                };
+                
+                db.transactions.unshift(newTransaction); // Add to top
 
-                if (!res.ok) throw new Error('Failed to add transaction');
+                // Update Balance
+                const account = db.accounts.find(a => a.id === 1);
+                if (data.type === 'credit') {
+                    account.balance += data.amount;
+                } else {
+                    account.balance -= data.amount;
+                }
+
+                LocalDB.saveData(db);
 
                 toggleModal();
                 e.target.reset();
-                fetchSummary();
-                fetchTransactions();
+                loadDashboard();
+                
             } catch (error) {
                 console.error('Error adding transaction:', error);
-                alert('Failed to add transaction. Check console for details.');
+                alert('Failed to add transaction.');
             }
         });
     </script>
