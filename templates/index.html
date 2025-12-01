@@ -413,12 +413,59 @@
                 padding: 0 1.5rem;
             }
         }
+
+        /* Auth Pages */
+        .auth-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .auth-card {
+            background: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 1rem;
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .auth-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .auth-subtitle {
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 0.875rem;
+        }
+
+        .auth-footer {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .auth-link {
+            color: var(--accent-color);
+            text-decoration: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
     </style>
 </head>
 
 <body>
     <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
-    <div class="sidebar" id="sidebar">
+    <div class="sidebar" id="sidebar" style="display: none;">
         <div class="logo">
             <i class="fas fa-coins"></i>
             CoinTrace
@@ -436,18 +483,21 @@
             <a href="#" class="nav-item" onclick="showSection('settings')">
                 <i class="fas fa-cog"></i> Settings
             </a>
+            <a href="#" class="nav-item" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
         </nav>
     </div>
 
-    <div class="main-content">
+    <div class="main-content" id="mainContent" style="display: none;">
         <div class="header">
             <div style="display: flex; align-items: center;">
                 <i class="fas fa-bars menu-toggle" onclick="toggleSidebar()"></i>
                 <h1 id="pageTitle">Dashboard</h1>
             </div>
             <div class="user-profile">
-                <span>ASHISH PANDEY</span>
-                <div class="avatar">AP</div>
+                <span id="userDisplayName">User</span>
+                <div class="avatar" id="userAvatar">U</div>
             </div>
         </div>
 
@@ -600,11 +650,11 @@
                 <form onsubmit="event.preventDefault(); alert('Settings saved!');">
                     <div class="form-group">
                         <label class="form-label">Full Name</label>
-                        <input type="text" class="form-input" value="ASHISH PANDEY">
+                        <input type="text" class="form-input" id="settingsName" readonly>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Email</label>
-                        <input type="email" class="form-input" value="ashisdvpandey@gmail.com">
+                        <input type="email" class="form-input" id="settingsEmail" readonly>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Currency</label>
@@ -617,6 +667,60 @@
                     </div>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Section -->
+    <div id="login" class="section auth-container">
+        <div class="auth-card">
+            <div class="logo" style="justify-content: center; margin-bottom: 1.5rem;">
+                <i class="fas fa-coins"></i> CoinTrace
+            </div>
+            <h2 class="auth-title">Welcome Back</h2>
+            <p class="auth-subtitle">Enter your credentials to access your account</p>
+            <form onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" name="email" required placeholder="name@example.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" name="password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn btn-primary">Sign In</button>
+            </form>
+            <div class="auth-footer">
+                Don't have an account? <span class="auth-link" onclick="showAuth('register')">Sign up</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Section -->
+    <div id="register" class="section auth-container" style="display: none;">
+        <div class="auth-card">
+            <div class="logo" style="justify-content: center; margin-bottom: 1.5rem;">
+                <i class="fas fa-coins"></i> CoinTrace
+            </div>
+            <h2 class="auth-title">Create Account</h2>
+            <p class="auth-subtitle">Start managing your finances today</p>
+            <form onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label class="form-label">Full Name</label>
+                    <input type="text" class="form-input" name="name" required placeholder="John Doe">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" name="email" required placeholder="name@example.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" name="password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn btn-primary">Create Account</button>
+            </form>
+            <div class="auth-footer">
+                Already have an account? <span class="auth-link" onclick="showAuth('login')">Sign in</span>
             </div>
         </div>
     </div>
@@ -668,9 +772,10 @@
     <script>
         // State
         let charts = {};
+        let currentUser = null;
 
         // Local Database Logic
-        const DB_KEY = 'cointrace_data_v1';
+        const DB_KEY = 'cointrace_data_v2'; // Bump version for schema change
 
         const LocalDB = {
             getData: () => {
@@ -681,21 +786,28 @@
                 localStorage.setItem(DB_KEY, JSON.stringify(data));
             },
             init: () => {
-                if (!LocalDB.getData()) {
+                const db = LocalDB.getData();
+                if (!db) {
+                    LocalDB.seed();
+                } else if (!db.users) {
+                    // Migration from v1 to v2 (if v1 existed)
+                    // For simplicity, just re-seed or adapt. Let's re-seed for this demo to ensure clean state.
                     LocalDB.seed();
                 }
             },
             seed: () => {
                 const initialData = {
-                    customers: [{ id: 1, name: "ASHISH PANDEY", email: "ashisdvpandey@gmail.com" }],
+                    users: [
+                        { id: 1, name: "ASHISH PANDEY", email: "ashisdvpandey@gmail.com", password: "password123" }
+                    ],
                     accounts: [
-                        { id: 1, customer_id: 1, type: "Checking", balance: 5000.00 },
-                        { id: 2, customer_id: 1, type: "Savings", balance: 12000.00 }
+                        { id: 1, user_id: 1, type: "Checking", balance: 5000.00 },
+                        { id: 2, user_id: 1, type: "Savings", balance: 12000.00 }
                     ],
                     transactions: []
                 };
 
-                // Seed Transactions
+                // Seed Transactions for User 1
                 const categories = ['Food', 'Transport', 'Utilities', 'Entertainment', 'Salary', 'Shopping'];
                 for (let i = 0; i < 50; i++) {
                     const t_type = Math.random() > 0.3 ? 'debit' : 'credit';
@@ -707,7 +819,7 @@
                         category = 'Salary';
                     } else {
                         category = categories[Math.floor(Math.random() * categories.length)];
-                        if (category === 'Salary') category = 'Food'; // Fix if random picked Salary for debit
+                        if (category === 'Salary') category = 'Food';
                     }
 
                     const days_ago = Math.floor(Math.random() * 180);
@@ -724,25 +836,125 @@
                         description: `${t_type} transaction for ${category}`
                     });
                 }
-                
-                // Sort transactions by date desc
-                initialData.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+                initialData.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
                 LocalDB.saveData(initialData);
-                console.log("Database seeded!");
+                console.log("Database seeded with V2 schema!");
             }
         };
 
         // Initialization
         document.addEventListener('DOMContentLoaded', () => {
             LocalDB.init();
+            checkAuth();
+        });
+
+        // Authentication Logic
+        function checkAuth() {
+            const sessionUser = sessionStorage.getItem('currentUser');
+            if (sessionUser) {
+                currentUser = JSON.parse(sessionUser);
+                showApp();
+            } else {
+                showAuth('login');
+            }
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const email = formData.get('email');
+            const password = formData.get('password');
+
+            const db = LocalDB.getData();
+            const user = db.users.find(u => u.email === email && u.password === password);
+
+            if (user) {
+                currentUser = user;
+                sessionStorage.setItem('currentUser', JSON.stringify(user));
+                showApp();
+                e.target.reset();
+            } else {
+                alert('Invalid email or password');
+            }
+        }
+
+        function handleRegister(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const name = formData.get('name');
+            const email = formData.get('email');
+            const password = formData.get('password');
+
+            const db = LocalDB.getData();
+
+            if (db.users.find(u => u.email === email)) {
+                alert('Email already registered');
+                return;
+            }
+
+            const newUser = {
+                id: db.users.length + 1,
+                name: name,
+                email: email,
+                password: password
+            };
+
+            db.users.push(newUser);
+
+            // Create default accounts for new user
+            const checkingId = db.accounts.length + 1;
+            const savingsId = db.accounts.length + 2;
+
+            db.accounts.push(
+                { id: checkingId, user_id: newUser.id, type: "Checking", balance: 0.00 },
+                { id: savingsId, user_id: newUser.id, type: "Savings", balance: 0.00 }
+            );
+
+            LocalDB.saveData(db);
+
+            alert('Registration successful! Please login.');
+            showAuth('login');
+            e.target.reset();
+        }
+
+        function logout() {
+            currentUser = null;
+            sessionStorage.removeItem('currentUser');
+            document.getElementById('sidebar').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'none';
+            document.querySelector('.fab').style.display = 'none';
+            showAuth('login');
+        }
+
+        function showAuth(type) {
+            document.querySelectorAll('.section').forEach(el => el.style.display = 'none');
+            document.getElementById(type).style.display = 'flex';
+        }
+
+        function showApp() {
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('register').style.display = 'none';
+            document.getElementById('sidebar').style.display = 'flex';
+            document.getElementById('mainContent').style.display = 'block';
+            document.querySelector('.fab').style.display = 'flex';
+
+            // Update User Profile UI
+            document.getElementById('userDisplayName').textContent = currentUser.name;
+            document.getElementById('userAvatar').textContent = currentUser.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+            document.getElementById('settingsName').value = currentUser.name;
+            document.getElementById('settingsEmail').value = currentUser.email;
+
             loadDashboard();
             showSection('dashboard');
-        });
+        }
 
         // Navigation
         function showSection(sectionId) {
-            document.querySelectorAll('.section').forEach(el => el.style.display = 'none');
+            if (!currentUser) return;
+            document.querySelectorAll('.section').forEach(el => {
+                if (!el.classList.contains('auth-container')) el.style.display = 'none';
+            });
             document.getElementById(sectionId).style.display = 'block';
 
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -765,26 +977,40 @@
         // Data Loading & Processing
         function loadDashboard() {
             const db = LocalDB.getData();
-            if (!db) return;
+            if (!db || !currentUser) return;
+
+            // Get User's Accounts
+            const userAccounts = db.accounts.filter(a => a.user_id === currentUser.id);
+            const userAccountIds = userAccounts.map(a => a.id);
+
+            // Get User's Transactions
+            const userTransactions = db.transactions.filter(t => userAccountIds.includes(t.account_id));
 
             // Calculate Totals
-            const totalBalance = db.accounts.reduce((sum, acc) => sum + acc.balance, 0);
-            
+            const totalBalance = userAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+
             // Monthly Stats
             const monthlyStats = {};
             const spendingByCategory = {};
 
-            db.transactions.forEach(t => {
+            // Initialize last 6 months with 0
+            for (let i = 0; i < 6; i++) {
+                const d = new Date();
+                d.setMonth(d.getMonth() - i);
+                const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                monthlyStats[monthKey] = { month: monthKey, income: 0, expense: 0 };
+            }
+
+            userTransactions.forEach(t => {
                 const date = new Date(t.date);
                 const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
-                if (!monthlyStats[monthKey]) monthlyStats[monthKey] = { month: monthKey, income: 0, expense: 0 };
-                
+
                 if (t.type === 'credit') {
                     monthlyStats[monthKey].income += t.amount;
                 } else {
                     monthlyStats[monthKey].expense += t.amount;
-                    
+
                     // Category Spending
                     if (!spendingByCategory[t.category]) spendingByCategory[t.category] = 0;
                     spendingByCategory[t.category] += t.amount;
@@ -794,11 +1020,13 @@
             const monthlyStatsArray = Object.values(monthlyStats).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 6);
             const spendingByCategoryArray = Object.entries(spendingByCategory).map(([k, v]) => ({ category: k, total: v }));
 
+
             updateDashboard({
                 total_balance: totalBalance,
                 monthly_stats: monthlyStatsArray,
                 spending_by_category: spendingByCategoryArray,
-                transactions: db.transactions
+                transactions: userTransactions,
+                accounts: userAccounts
             });
         }
 
@@ -809,38 +1037,30 @@
             const lastMonth = data.monthly_stats[0];
             if (lastMonth) {
                 document.getElementById('monthlySpending').textContent = formatCurrency(lastMonth.expense);
+            } else {
+                document.getElementById('monthlySpending').textContent = formatCurrency(0);
             }
 
             renderMainChart(data.monthly_stats);
             renderPieChart(data.spending_by_category);
             renderAnalyticsChart(data.monthly_stats);
-            
+
             renderTransactions(data.transactions);
             renderAnalytics(data.transactions);
-            
+
             // Update Accounts UI
-            const db = LocalDB.getData();
-            const checking = db.accounts.find(a => a.type === 'Checking');
-            const savings = db.accounts.find(a => a.type === 'Savings');
-            
-            // Hardcoded update for demo purposes based on seed structure
-            if(checking) {
-                 // Find the card with "Checking Account" and update value
-                 const cards = document.querySelectorAll('#accounts .card');
-                 cards.forEach(card => {
-                     if(card.innerText.includes('Checking Account')) {
-                         card.querySelector('.card-value').textContent = formatCurrency(checking.balance);
-                     }
-                 });
-            }
-            if(savings) {
-                 const cards = document.querySelectorAll('#accounts .card');
-                 cards.forEach(card => {
-                     if(card.innerText.includes('Savings Account')) {
-                         card.querySelector('.card-value').textContent = formatCurrency(savings.balance);
-                     }
-                 });
-            }
+            const checking = data.accounts.find(a => a.type === 'Checking');
+            const savings = data.accounts.find(a => a.type === 'Savings');
+
+            const cards = document.querySelectorAll('#accounts .card');
+            cards.forEach(card => {
+                if (card.innerText.includes('Checking Account')) {
+                    card.querySelector('.card-value').textContent = checking ? formatCurrency(checking.balance) : formatCurrency(0);
+                }
+                if (card.innerText.includes('Savings Account')) {
+                    card.querySelector('.card-value').textContent = savings ? formatCurrency(savings.balance) : formatCurrency(0);
+                }
+            });
         }
 
         function renderTransactions(transactions) {
@@ -1010,22 +1230,29 @@
 
             try {
                 const db = LocalDB.getData();
-                
+
+                // Find User's Account (Defaulting to Checking for now)
+                const userAccount = db.accounts.find(a => a.user_id === currentUser.id && a.type === 'Checking');
+                if (!userAccount) {
+                    alert('No checking account found!');
+                    return;
+                }
+
                 // Add Transaction
                 const newTransaction = {
                     id: db.transactions.length + 1,
-                    account_id: 1, // Default
+                    account_id: userAccount.id,
                     date: new Date().toISOString(),
                     amount: data.amount,
                     type: data.type,
                     category: data.category,
                     description: data.description
                 };
-                
+
                 db.transactions.unshift(newTransaction); // Add to top
 
                 // Update Balance
-                const account = db.accounts.find(a => a.id === 1);
+                const account = db.accounts.find(a => a.id === userAccount.id);
                 if (data.type === 'credit') {
                     account.balance += data.amount;
                 } else {
@@ -1037,7 +1264,7 @@
                 toggleModal();
                 e.target.reset();
                 loadDashboard();
-                
+
             } catch (error) {
                 console.error('Error adding transaction:', error);
                 alert('Failed to add transaction.');
