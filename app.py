@@ -43,8 +43,8 @@ def auth():
 
     db = get_db()
     try:
-        # Check if user exists
-        user = query_db('SELECT * FROM customers WHERE name = ?', [username], one=True)
+        # Check if user exists (Case Insensitive)
+        user = query_db('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [username.strip()], one=True)
         
         if not user:
             # Create new user
@@ -54,7 +54,7 @@ def auth():
             # Given the previous schema had email UNIQUE, let's assume username is unique enough for this request.
             # We'll just store username in 'name' and 'email' to satisfy constraints, or modify schema.
             # Let's just use username for both for now to be safe with existing schema.
-            cur.execute('INSERT INTO customers (name, email) VALUES (?, ?)', (username, username))
+            cur.execute('INSERT INTO customers (name, email) VALUES (?, ?)', (username.strip(), username.strip()))
             user_id = cur.lastrowid
             
             # Create default accounts

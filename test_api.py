@@ -44,6 +44,12 @@ class CoinTraceApiTestCase(unittest.TestCase):
         data = json.loads(rv.data)
         self.assertEqual(data['user']['id'], user_id)
 
+        # Test case-insensitive login
+        rv = self.auth('TESTUSER')
+        self.assertEqual(rv.status_code, 200)
+        data = json.loads(rv.data)
+        self.assertEqual(data['user']['id'], user_id)
+
     def test_dashboard_access(self):
         # Try without login
         rv = self.app.get('/api/dashboard')
