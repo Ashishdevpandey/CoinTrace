@@ -794,7 +794,7 @@
         async function handleLogin(event) {
             event.preventDefault();
             const form = event.target;
-            const username = form.email.value; // Using email field as username for simplicity
+            const username = form.username.value;
 
             try {
                 const response = await API.auth(username);
