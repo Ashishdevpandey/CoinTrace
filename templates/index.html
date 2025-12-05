@@ -684,6 +684,11 @@
                     <label class="form-label">Username</label>
                     <input type="text" class="form-input" name="username" required placeholder="Enter your username">
                 </div>
+                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="rememberMe" name="rememberMe">
+                    <label for="rememberMe"
+                        style="color: var(--text-secondary); font-size: 0.875rem; cursor: pointer;">Remember me</label>
+                </div>
                 <button type="submit" class="btn btn-primary">Continue</button>
             </form>
         </div>
@@ -786,8 +791,17 @@
 
         // App Logic
         function init() {
+            // Check for saved username
+            const savedUsername = localStorage.getItem('savedUsername');
+            if (savedUsername) {
+                const form = document.querySelector('#login form');
+                if (form) {
+                    form.username.value = savedUsername;
+                    form.rememberMe.checked = true;
+                }
+            }
+
             // Check if user is already logged in (optional, for now just show login)
-            // Ideally we check a session endpoint or handle 401s globally
             showAuth('login');
         }
 
@@ -795,9 +809,18 @@
             event.preventDefault();
             const form = event.target;
             const username = form.username.value;
+            const rememberMe = form.rememberMe.checked;
 
             try {
                 const response = await API.auth(username);
+                currentUser = response.user;
+
+                // Handle Remember Me
+                if (rememberMe) {
+                    localStorage.setItem('savedUsername', username);
+                } else {
+                    localStorage.removeItem('savedUsername');
+                }
                 currentUser = response.user;
 
                 // Update UI with user info

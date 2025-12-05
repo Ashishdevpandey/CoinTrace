@@ -27,6 +27,15 @@ def query_db(query, args=(), one=False):
     cur.close()
     return (rv[0] if rv else None) if one else rv
 
+def init_db():
+    with app.app_context():
+        db = get_db()
+        # Create tables if they don't exist
+        db.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
+        db.execute('CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, type TEXT, balance REAL DEFAULT 0.0)')
+        db.execute('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, date TEXT, amount REAL, type TEXT, category TEXT, description TEXT)')
+        db.commit()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -153,5 +162,6 @@ def add_transaction():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
