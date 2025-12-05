@@ -982,9 +982,6 @@
         }
 
         function updateCharts(transactions) {
-            // Process data for charts
-            // ... (Simplified for brevity, can be expanded)
-
             const ctxMain = document.getElementById('mainChart').getContext('2d');
             const ctxPie = document.getElementById('pieChart').getContext('2d');
             const ctxAnalytics = document.getElementById('analyticsLineChart').getContext('2d');
@@ -993,49 +990,161 @@
             if (charts.pie) charts.pie.destroy();
             if (charts.analytics) charts.analytics.destroy();
 
-            // Dummy data for visual consistency if no real data
+            // Process Data for Main Chart (Last 6 Months)
+            const months = [];
+            const incomeData = [];
+            const expenseData = [];
+
+            for (let i = 5; i >= 0; i--) {
+                const d = new Date();
+                d.setMonth(d.getMonth() - i);
+                const monthName = d.toLocaleString('default', { month: 'short' });
+                months.push(monthName);
+
+                // Filter transactions for this month
+                const monthTransactions = transactions.filter(t => {
+                    const tDate = new Date(t.date);
+                    return tDate.getMonth() === d.getMonth() && tDate.getFullYear() === d.getFullYear();
+                });
+
+                const income = monthTransactions
+                    .filter(t => t.type === 'credit')
+                    .reduce((sum, t) => sum + t.amount, 0);
+
+                const expense = monthTransactions
+                    .filter(t => t.type === 'debit')
+                    .reduce((sum, t) => sum + t.amount, 0);
+
+                incomeData.push(income);
+                expenseData.push(expense);
+            }
+
+            // Process Data for Pie Chart (Expenses by Category)
+            const categories = {};
+            transactions
+                .filter(t => t.type === 'debit')
+                .forEach(t => {
+                    categories[t.category] = (categories[t.category] || 0) + t.amount;
+                });
+
+            const pieLabels = Object.keys(categories);
+            const pieData = Object.values(categories);
+            const pieColors = [
+                '#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#6366f1'
+            ];
+
+            // Main Chart
             charts.main = new Chart(ctxMain, {
                 type: 'line',
                 data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    labels: months,
                     datasets: [{
                         label: 'Income',
-                        data: [12000, 19000, 3000, 5000, 2000, 3000],
+                        data: incomeData,
                         borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
                         tension: 0.4
                     }, {
                         label: 'Expense',
-                        data: [10000, 15000, 2000, 4000, 1500, 2500],
+                        data: expenseData,
                         borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        fill: true,
                         tension: 0.4
                     }]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#94a3b8' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    }
+                }
             });
 
+            // Pie Chart
             charts.pie = new Chart(ctxPie, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Food', 'Transport', 'Shopping'],
+                    labels: pieLabels,
                     datasets: [{
-                        data: [30, 20, 50],
-                        backgroundColor: ['#f59e0b', '#3b82f6', '#ef4444']
+                        data: pieData,
+                        backgroundColor: pieColors.slice(0, pieLabels.length),
+                        borderWidth: 0
                     }]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#94a3b8' }
+                        }
+                    }
+                }
             });
+
+            // Analytics Chart (Daily Spending - Last 7 Days)
+            const days = [];
+            const dailySpending = [];
+
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                days.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+
+                const dayTransactions = transactions.filter(t => {
+                    const tDate = new Date(t.date);
+                    return tDate.getDate() === d.getDate() &&
+                        tDate.getMonth() === d.getMonth() &&
+                        tDate.getFullYear() === d.getFullYear() &&
+                        t.type === 'debit';
+                });
+
+                const spending = dayTransactions.reduce((sum, t) => sum + t.amount, 0);
+                dailySpending.push(spending);
+            }
 
             charts.analytics = new Chart(ctxAnalytics, {
                 type: 'bar',
                 data: {
-                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    labels: days,
                     datasets: [{
-                        label: 'Spending',
-                        data: [65, 59, 80, 81, 56, 55, 40],
-                        backgroundColor: '#3b82f6'
+                        label: 'Daily Spending',
+                        data: dailySpending,
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 4
                     }]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    }
+                }
             });
         }
 
