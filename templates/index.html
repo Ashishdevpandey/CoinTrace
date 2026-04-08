@@ -56,14 +56,20 @@
             background: rgba(255, 255, 255, 0.2);
         }
 
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Lock viewport completely */
+        }
+
         body {
             background: var(--bg-color);
             background-image: var(--bg-gradient);
             background-attachment: fixed;
             color: var(--text-primary);
-            min-height: 100vh;
             display: flex;
-            overflow-x: hidden; /* Stop horizontal flow but allow vertical scrolling */
+            width: 100%;
         }
 
         /* Glassmorphism utility */
@@ -129,8 +135,10 @@
             flex: 1;
             padding: 2rem;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             position: relative;
             min-width: 0;
+            height: 100%;
             max-width: 100vw;
         }
 
@@ -1267,6 +1275,12 @@
                 await API.addFriend({ name, phone });
                 form.reset();
                 await loadFriends();
+                setTimeout(() => {
+                    const mainContent = document.querySelector('.main-content');
+                    if(mainContent) {
+                        mainContent.scrollTo({ top: mainContent.scrollHeight, behavior: 'smooth' });
+                    }
+                }, 100);
             } catch (e) {
                 console.error('Add friend failed', e);
                 showToast(e.message, 'error');
