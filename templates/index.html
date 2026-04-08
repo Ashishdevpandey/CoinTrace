@@ -1482,6 +1482,10 @@
 
             if (sectionId === 'settings') {
                 loadSettings();
+            } else if (sectionId === 'friends') {
+                loadFriends();
+            } else if (sectionId === 'dashboard') {
+                loadDashboard();
             }
 
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
