@@ -34,6 +34,26 @@ def init_db():
         db.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
         db.execute('CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, type TEXT, balance REAL DEFAULT 0.0)')
         db.execute('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, date TEXT, amount REAL, type TEXT, category TEXT, description TEXT)')
+        # Friends / Udhar tables
+        db.execute('''CREATE TABLE IF NOT EXISTS friends (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT,
+            FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS friend_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id INTEGER NOT NULL,
+            friend_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            type TEXT NOT NULL,
+            note TEXT,
+            date TEXT NOT NULL,
+            settled INTEGER DEFAULT 0,
+            FOREIGN KEY (customer_id) REFERENCES customers(id),
+            FOREIGN KEY (friend_id) REFERENCES friends(id)
+        )''')
         db.commit()
 
 @app.route('/')
@@ -44,11 +64,13 @@ def index():
 
 @app.route('/api/auth', methods=['POST'])
 def auth():
+    from werkzeug.security import generate_password_hash, check_password_hash
     data = request.get_json()
     username = data.get('username')
+    password = data.get('password')
 
-    if not username:
-        return jsonify({'error': 'Username is required'}), 400
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
 
     db = get_db()
     try:
@@ -56,27 +78,48 @@ def auth():
         user = query_db('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [username.strip()], one=True)
         
         if not user:
-            # Create new user
-            cur = db.cursor()
-            # We use username as email for simplicity in this schema, or just leave email empty/dummy if schema requires it.
-            # The schema has email NOT NULL. Let's use username as email or adjust schema.
-            # Given the previous schema had email UNIQUE, let's assume username is unique enough for this request.
-            # We'll just store username in 'name' and 'email' to satisfy constraints, or modify schema.
-            # Let's just use username for both for now to be safe with existing schema.
-            cur.execute('INSERT INTO customers (name, email) VALUES (?, ?)', (username.strip(), username.strip()))
-            user_id = cur.lastrowid
+            return jsonify({'error': 'Account not found. Please register.'}), 404
             
-            # Create default accounts
-            cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Checking', 0.0))
-            cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Savings', 0.0))
-            db.commit()
-            
-            # Fetch the newly created user
-            user = query_db('SELECT * FROM customers WHERE id = ?', [user_id], one=True)
+        if not user['password'] or not check_password_hash(user['password'], password):
+            return jsonify({'error': 'Invalid username or password'}), 401
 
         session['user_id'] = user['id']
         session['user_name'] = user['name']
         return jsonify({'message': 'Authenticated successfully', 'user': {'id': user['id'], 'name': user['name']}}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    from werkzeug.security import generate_password_hash
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+
+    db = get_db()
+    try:
+        user = query_db('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [username.strip()], one=True)
+        if user:
+            return jsonify({'error': 'Username already exists'}), 400
+
+        cur = db.cursor()
+        hashed_password = generate_password_hash(password)
+        cur.execute('INSERT INTO customers (name, email, password) VALUES (?, ?, ?)', (username.strip(), username.strip(), hashed_password))
+        user_id = cur.lastrowid
+        
+        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Checking', 0.0))
+        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Savings', 0.0))
+        db.commit()
+        
+        user = query_db('SELECT * FROM customers WHERE id = ?', [user_id], one=True)
+        session['user_id'] = user['id']
+        session['user_name'] = user['name']
+
+        return jsonify({'message': 'Created successfully', 'user': {'id': user['id'], 'name': user['name']}}), 201
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -158,6 +201,108 @@ def add_transaction():
         
         db.commit()
         return jsonify({'message': 'Transaction added', 'new_balance': new_balance}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- Friends / Udhar API ---
+
+@app.route('/api/friends', methods=['GET'])
+def get_friends():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = session['user_id']
+    friends = query_db('SELECT * FROM friends WHERE customer_id = ? ORDER BY name', [user_id])
+    result = []
+    for f in friends:
+        # Calculate net balance for this friend
+        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = ? AND customer_id = ? AND settled = 0', [f['id'], user_id])
+        net = 0.0
+        for t in txns:
+            if t['type'] == 'lent':    # I gave money → they owe me (positive = they owe me)
+                net += t['amount']
+            else:                       # borrowed → I owe them (negative = I owe them)
+                net -= t['amount']
+        result.append({'id': f['id'], 'name': f['name'], 'phone': f['phone'], 'net': round(net, 2)})
+    return jsonify(result)
+
+@app.route('/api/friends', methods=['POST'])
+def add_friend():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = session['user_id']
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    phone = data.get('phone', '').strip()
+    if not name:
+        return jsonify({'error': 'Name is required'}), 400
+    db = get_db()
+    try:
+        cur = db.cursor()
+        cur.execute('INSERT INTO friends (customer_id, name, phone) VALUES (?, ?, ?)', (user_id, name, phone))
+        db.commit()
+        return jsonify({'id': cur.lastrowid, 'name': name, 'phone': phone, 'net': 0.0}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/friends/<int:friend_id>/transactions', methods=['GET'])
+def get_friend_transactions(friend_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = session['user_id']
+    txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = ? AND customer_id = ? ORDER BY date DESC', [friend_id, user_id])
+    result = [{'id': t['id'], 'amount': t['amount'], 'type': t['type'], 'note': t['note'], 'date': t['date'], 'settled': bool(t['settled'])} for t in txns]
+    return jsonify(result)
+
+@app.route('/api/friends/<int:friend_id>/transactions', methods=['POST'])
+def add_friend_transaction(friend_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = session['user_id']
+    data = request.get_json()
+    amount = float(data.get('amount', 0))
+    txn_type = data.get('type')  # 'lent' or 'borrowed'
+    note = data.get('note', '')
+    if amount <= 0 or txn_type not in ('lent', 'borrowed'):
+        return jsonify({'error': 'Invalid amount or type'}), 400
+    import datetime
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db = get_db()
+    try:
+        cur = db.cursor()
+        cur.execute('INSERT INTO friend_transactions (customer_id, friend_id, amount, type, note, date) VALUES (?, ?, ?, ?, ?, ?)',
+                    (user_id, friend_id, amount, txn_type, note, date_str))
+        db.commit()
+        return jsonify({'message': 'Transaction added'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/friends/transactions/<int:txn_id>/settle', methods=['POST'])
+def settle_friend_transaction(txn_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = session['user_id']
+    db = get_db()
+    try:
+        db.execute('UPDATE friend_transactions SET settled = 1 WHERE id = ? AND customer_id = ?', (txn_id, user_id))
+        db.commit()
+        return jsonify({'message': 'Settled'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/friends/<int:friend_id>', methods=['DELETE'])
+def delete_friend(friend_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = session['user_id']
+    db = get_db()
+    try:
+        cur = db.cursor()
+        # Delete related transactions first
+        cur.execute('DELETE FROM friend_transactions WHERE friend_id = ? AND customer_id = ?', (friend_id, user_id))
+        # Delete the friend
+        cur.execute('DELETE FROM friends WHERE id = ? AND customer_id = ?', (friend_id, user_id))
+        db.commit()
+        return jsonify({'message': 'Friend removed'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
