@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import shutil
 from flask import Flask, render_template, request, jsonify, g, session
 from flask_cors import CORS
 
@@ -10,7 +11,17 @@ CORS(app)
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
-        db_path = app.config.get('DATABASE', 'banking.db')
+        # Vercel uses a read-only filesystem, detect via Vercel's standard env vars
+        is_vercel = os.environ.get('VERCEL') or os.environ.get('VERCEL_URL') or os.environ.get('VERCEL_REGION')
+        if is_vercel:
+            default_db = '/tmp/banking.db'
+            # If the tmp db doesn't exist yet, copy the bundled one to preserve existing test accounts
+            if not os.path.exists(default_db) and os.path.exists('banking.db'):
+                shutil.copy2('banking.db', default_db)
+        else:
+            default_db = 'banking.db'
+            
+        db_path = app.config.get('DATABASE', default_db)
         db = g._database = sqlite3.connect(db_path)
         db.row_factory = sqlite3.Row
     return db
@@ -306,7 +317,9 @@ def delete_friend(friend_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Initialize database tables unconditionally so Vercel's serverless environment picks it up
+init_db()
+
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
