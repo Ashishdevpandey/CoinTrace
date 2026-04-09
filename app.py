@@ -1,8 +1,13 @@
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import shutil
 from flask import Flask, render_template, request, jsonify, g, session
 from flask_cors import CORS
+from dotenv import load_dotenv
+
+# Load environment variables from .env file for local development
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key') # Change this in production
@@ -11,19 +16,22 @@ CORS(app)
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
-        # Vercel uses a read-only filesystem, detect via Vercel's standard env vars
-        is_vercel = os.environ.get('VERCEL') or os.environ.get('VERCEL_URL') or os.environ.get('VERCEL_REGION')
-        if is_vercel:
-            default_db = '/tmp/banking.db'
-            # If the tmp db doesn't exist yet, copy the bundled one to preserve existing test accounts
-            if not os.path.exists(default_db) and os.path.exists('banking.db'):
-                shutil.copy2('banking.db', default_db)
-        else:
-            default_db = 'banking.db'
+        # Vercel provides POSTGRES_URL in the environment
+        db_url = os.environ.get('POSTGRES_URL')
+        
+        # If not on Vercel or POSTGRES_URL is missing, you might need a local fallback
+        # for development, but for now we focus on Vercel persistence.
+        if not db_url:
+            # Fallback for local development if needed, e.g., 'postgresql://user:pass@localhost:5432/db'
+            # For now, we assume it's set on Vercel.
+            raise RuntimeError("POSTGRES_URL environment variable is not set. Please check Vercel Storage settings.")
             
-        db_path = app.config.get('DATABASE', default_db)
-        db = g._database = sqlite3.connect(db_path)
-        db.row_factory = sqlite3.Row
+        # psycopg2 can handle 'postgres://' or 'postgresql://' URLs
+        # Vercel URL might be 'postgres://...', psycopg2 prefers 'postgresql://'
+        if db_url.startswith('postgres://'):
+            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+
+        db = g._database = psycopg2.connect(db_url)
     return db
 
 @app.teardown_appcontext
@@ -33,39 +41,51 @@ def close_connection(exception):
         db.close()
 
 def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
+    db = get_db()
+    cur = db.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute(query, args)
+        rv = cur.fetchall()
+        cur.close()
+        return (rv[0] if rv else None) if one else rv
+    except Exception as e:
+        cur.close()
+        print(f"Database error: {e}")
+        raise e
 
 def init_db():
     with app.app_context():
-        db = get_db()
-        # Create tables if they don't exist
-        db.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
-        db.execute('CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, type TEXT, balance REAL DEFAULT 0.0)')
-        db.execute('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, date TEXT, amount REAL, type TEXT, category TEXT, description TEXT)')
-        # Friends / Udhar tables
-        db.execute('''CREATE TABLE IF NOT EXISTS friends (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            phone TEXT,
-            FOREIGN KEY (customer_id) REFERENCES customers(id)
-        )''')
-        db.execute('''CREATE TABLE IF NOT EXISTS friend_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_id INTEGER NOT NULL,
-            friend_id INTEGER NOT NULL,
-            amount REAL NOT NULL,
-            type TEXT NOT NULL,
-            note TEXT,
-            date TEXT NOT NULL,
-            settled INTEGER DEFAULT 0,
-            FOREIGN KEY (customer_id) REFERENCES customers(id),
-            FOREIGN KEY (friend_id) REFERENCES friends(id)
-        )''')
-        db.commit()
+        try:
+            db = get_db()
+            cur = db.cursor()
+            # Create tables if they don't exist (Postgres syntax)
+            cur.execute('CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
+            cur.execute('CREATE TABLE IF NOT EXISTS accounts (id SERIAL PRIMARY KEY, customer_id INTEGER, type TEXT, balance DOUBLE PRECISION DEFAULT 0.0)')
+            cur.execute('CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, account_id INTEGER, date TEXT, amount DOUBLE PRECISION, type TEXT, category TEXT, description TEXT)')
+            # Friends / Udhar tables
+            cur.execute('''CREATE TABLE IF NOT EXISTS friends (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT,
+                FOREIGN KEY (customer_id) REFERENCES customers(id)
+            )''')
+            cur.execute('''CREATE TABLE IF NOT EXISTS friend_transactions (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL,
+                friend_id INTEGER NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
+                type TEXT NOT NULL,
+                note TEXT,
+                date TEXT NOT NULL,
+                settled INTEGER DEFAULT 0,
+                FOREIGN KEY (customer_id) REFERENCES customers(id),
+                FOREIGN KEY (friend_id) REFERENCES friends(id)
+            )''')
+            db.commit()
+            cur.close()
+        except Exception as e:
+            print(f"Error initializing DB: {e}")
 
 @app.route('/')
 def index():
@@ -85,8 +105,8 @@ def auth():
 
     db = get_db()
     try:
-        # Check if user exists (Case Insensitive)
-        user = query_db('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [username.strip()], one=True)
+        # Check if user exists (Case Insensitive using LOWER in Postgres)
+        user = query_db('SELECT * FROM customers WHERE LOWER(name) = LOWER(%s)', [username.strip()], one=True)
         
         if not user:
             return jsonify({'error': 'Account not found. Please register.'}), 404
@@ -113,20 +133,21 @@ def register():
 
     db = get_db()
     try:
-        user = query_db('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [username.strip()], one=True)
+        user = query_db('SELECT * FROM customers WHERE LOWER(name) = LOWER(%s)', [username.strip()], one=True)
         if user:
             return jsonify({'error': 'Username already exists'}), 400
 
         cur = db.cursor()
         hashed_password = generate_password_hash(password)
-        cur.execute('INSERT INTO customers (name, email, password) VALUES (?, ?, ?)', (username.strip(), username.strip(), hashed_password))
-        user_id = cur.lastrowid
+        cur.execute('INSERT INTO customers (name, email, password) VALUES (%s, %s, %s) RETURNING id', (username.strip(), username.strip(), hashed_password))
+        user_id = cur.fetchone()[0]
         
-        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Checking', 0.0))
-        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Savings', 0.0))
+        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (%s, %s, %s)', (user_id, 'Checking', 0.0))
+        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (%s, %s, %s)', (user_id, 'Savings', 0.0))
         db.commit()
+        cur.close()
         
-        user = query_db('SELECT * FROM customers WHERE id = ?', [user_id], one=True)
+        user = query_db('SELECT * FROM customers WHERE id = %s', [user_id], one=True)
         session['user_id'] = user['id']
         session['user_name'] = user['name']
 
@@ -148,17 +169,15 @@ def dashboard():
     user_id = session['user_id']
     
     # Get Accounts
-    accounts = query_db('SELECT * FROM accounts WHERE customer_id = ?', [user_id])
+    accounts = query_db('SELECT * FROM accounts WHERE customer_id = %s', [user_id])
     accounts_data = [{'id': row['id'], 'type': row['type'], 'balance': row['balance']} for row in accounts]
     
     # Get Transactions (for all user accounts)
-    # This is a simplified query. Ideally we join tables.
-    # First get account IDs
     account_ids = [acc['id'] for acc in accounts_data]
     if not account_ids:
         transactions_data = []
     else:
-        placeholders = ','.join('?' * len(account_ids))
+        placeholders = ','.join(['%s'] * len(account_ids))
         transactions = query_db(f'SELECT * FROM transactions WHERE account_id IN ({placeholders}) ORDER BY date DESC', account_ids)
         transactions_data = [{'id': row['id'], 'date': row['date'], 'amount': row['amount'], 'type': row['type'], 'category': row['category'], 'description': row['description']} for row in transactions]
 
@@ -182,10 +201,10 @@ def add_transaction():
     description = data.get('description')
     
     # For simplicity, just pick the first Checking account
-    account = query_db('SELECT * FROM accounts WHERE customer_id = ? AND type = ?', [user_id, 'Checking'], one=True)
+    account = query_db('SELECT * FROM accounts WHERE customer_id = %s AND type = %s', [user_id, 'Checking'], one=True)
     if not account:
          # Fallback to any account if Checking doesn't exist
-        account = query_db('SELECT * FROM accounts WHERE customer_id = ?', [user_id], one=True)
+        account = query_db('SELECT * FROM accounts WHERE customer_id = %s', [user_id], one=True)
         
     if not account:
         return jsonify({'error': 'No account found'}), 400
@@ -202,15 +221,16 @@ def add_transaction():
     db = get_db()
     try:
         cur = db.cursor()
-        cur.execute('UPDATE accounts SET balance = ? WHERE id = ?', (new_balance, account_id))
+        cur.execute('UPDATE accounts SET balance = %s WHERE id = %s', (new_balance, account_id))
         
         # Insert transaction
         import datetime
         date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cur.execute('INSERT INTO transactions (account_id, date, amount, type, category, description) VALUES (?, ?, ?, ?, ?, ?)',
+        cur.execute('INSERT INTO transactions (account_id, date, amount, type, category, description) VALUES (%s, %s, %s, %s, %s, %s)',
                     (account_id, date_str, amount, type, category, description))
         
         db.commit()
+        cur.close()
         return jsonify({'message': 'Transaction added', 'new_balance': new_balance}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -222,11 +242,11 @@ def get_friends():
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     user_id = session['user_id']
-    friends = query_db('SELECT * FROM friends WHERE customer_id = ? ORDER BY name', [user_id])
+    friends = query_db('SELECT * FROM friends WHERE customer_id = %s ORDER BY name', [user_id])
     result = []
     for f in friends:
         # Calculate net balance for this friend
-        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = ? AND customer_id = ? AND settled = 0', [f['id'], user_id])
+        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s AND settled = 0', [f['id'], user_id])
         net = 0.0
         for t in txns:
             if t['type'] == 'lent':    # I gave money → they owe me (positive = they owe me)
@@ -249,9 +269,11 @@ def add_friend():
     db = get_db()
     try:
         cur = db.cursor()
-        cur.execute('INSERT INTO friends (customer_id, name, phone) VALUES (?, ?, ?)', (user_id, name, phone))
+        cur.execute('INSERT INTO friends (customer_id, name, phone) VALUES (%s, %s, %s) RETURNING id', (user_id, name, phone))
+        friend_id = cur.fetchone()[0]
         db.commit()
-        return jsonify({'id': cur.lastrowid, 'name': name, 'phone': phone, 'net': 0.0}), 201
+        cur.close()
+        return jsonify({'id': friend_id, 'name': name, 'phone': phone, 'net': 0.0}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -260,7 +282,7 @@ def get_friend_transactions(friend_id):
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     user_id = session['user_id']
-    txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = ? AND customer_id = ? ORDER BY date DESC', [friend_id, user_id])
+    txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s ORDER BY date DESC', [friend_id, user_id])
     result = [{'id': t['id'], 'amount': t['amount'], 'type': t['type'], 'note': t['note'], 'date': t['date'], 'settled': bool(t['settled'])} for t in txns]
     return jsonify(result)
 
@@ -280,9 +302,10 @@ def add_friend_transaction(friend_id):
     db = get_db()
     try:
         cur = db.cursor()
-        cur.execute('INSERT INTO friend_transactions (customer_id, friend_id, amount, type, note, date) VALUES (?, ?, ?, ?, ?, ?)',
+        cur.execute('INSERT INTO friend_transactions (customer_id, friend_id, amount, type, note, date) VALUES (%s, %s, %s, %s, %s, %s)',
                     (user_id, friend_id, amount, txn_type, note, date_str))
         db.commit()
+        cur.close()
         return jsonify({'message': 'Transaction added'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -294,8 +317,10 @@ def settle_friend_transaction(txn_id):
     user_id = session['user_id']
     db = get_db()
     try:
-        db.execute('UPDATE friend_transactions SET settled = 1 WHERE id = ? AND customer_id = ?', (txn_id, user_id))
+        cur = db.cursor()
+        cur.execute('UPDATE friend_transactions SET settled = 1 WHERE id = %s AND customer_id = %s', (txn_id, user_id))
         db.commit()
+        cur.close()
         return jsonify({'message': 'Settled'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -309,10 +334,11 @@ def delete_friend(friend_id):
     try:
         cur = db.cursor()
         # Delete related transactions first
-        cur.execute('DELETE FROM friend_transactions WHERE friend_id = ? AND customer_id = ?', (friend_id, user_id))
+        cur.execute('DELETE FROM friend_transactions WHERE friend_id = %s AND customer_id = %s', (friend_id, user_id))
         # Delete the friend
-        cur.execute('DELETE FROM friends WHERE id = ? AND customer_id = ?', (friend_id, user_id))
+        cur.execute('DELETE FROM friends WHERE id = %s AND customer_id = %s', (friend_id, user_id))
         db.commit()
+        cur.close()
         return jsonify({'message': 'Friend removed'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
