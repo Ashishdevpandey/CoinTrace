@@ -1580,9 +1580,12 @@
         }
 
         // UI Helpers
-        function showSection(sectionId) {
+        function showSection(sectionId, updateHistory = true) {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+
             document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
-            document.getElementById(sectionId).style.display = 'block';
+            section.style.display = 'block';
 
             if (sectionId === 'settings') {
                 loadSettings();
@@ -1593,15 +1596,31 @@
             }
 
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            const navLink = document.querySelector(`.nav-item[onclick="showSection('${sectionId}')"]`);
+            const navLink = document.querySelector(`.nav-item[onclick*="'${sectionId}'"]`);
             if (navLink) navLink.classList.add('active');
+
+            // Handle browser history for back button
+            if (updateHistory) {
+                history.pushState({ sectionId }, '', '#' + sectionId);
+            }
 
             // Close sidebar on mobile
             if (window.innerWidth <= 1024) {
                 document.getElementById('sidebar').classList.remove('active');
-                document.querySelector('.sidebar-overlay').classList.remove('active');
+                const overlay = document.querySelector('.sidebar-overlay');
+                if (overlay) overlay.classList.remove('active');
             }
         }
+
+        // Listen for back button
+        window.onpopstate = function(event) {
+            if (event.state && event.state.sectionId) {
+                showSection(event.state.sectionId, false);
+            } else if (currentUser) {
+                // Default to dashboard if no state but user is logged in
+                showSection('dashboard', false);
+            }
+        };
 
         function showAuth(type) {
             document.querySelectorAll('.auth-container').forEach(c => c.style.display = 'none');

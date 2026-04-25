@@ -495,14 +495,10 @@ def add_friend_transaction(friend_id):
         cur.close()
         
         # --- NEW: SUPER FAST ASYNC LOGIC ---
-        # Move balance calculation and notification entirely to background thread
-        def background_notification():
-            # Get friend info and user name within the thread
-            user_name = session.get('user_name', 'User')
-            friend = query_db('SELECT * FROM friends WHERE id = %s', [friend_id], one=True)
-            if not friend or not friend['email']:
-                return
-
+        user_name = session.get('user_name', 'User')
+        friend = query_db('SELECT * FROM friends WHERE id = %s', [friend_id], one=True)
+        
+        if friend and friend['email']:
             # Calculate new net balance for notification (Optimized)
             net_row = query_db('''
                 SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
@@ -511,9 +507,9 @@ def add_friend_transaction(friend_id):
             ''', [friend_id, user_id], one=True)
             net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
             
-            send_transaction_notification(friend['email'], friend['name'], user_name, amount, txn_type, net, note)
-
-        threading.Thread(target=background_notification).start()
+            # Start thread with pre-fetched data
+            threading.Thread(target=send_transaction_notification, 
+                             args=(friend['email'], friend['name'], user_name, amount, txn_type, net, note)).start()
         # --- END ASYNC LOGIC ---
 
         return jsonify({'message': 'Transaction added'}), 201
@@ -544,8 +540,8 @@ def settle_friend_transaction(txn_id):
         cur.close()
         
         # --- NEW: SUPER FAST ASYNC LOGIC FOR SETTLE ---
-        def background_settle_notification():
-            user_name = session.get('user_name', 'User')
+        user_name = session.get('user_name', 'User')
+        if friend and friend['email']:
             # Calculate new net balance (Optimized)
             net_row = query_db('''
                 SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
@@ -555,10 +551,8 @@ def settle_friend_transaction(txn_id):
             net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
                 
             # Send settlement notification (Async)
-            if friend and friend['email']:
-                send_transaction_notification(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")
-
-        threading.Thread(target=background_settle_notification).start()
+            threading.Thread(target=send_transaction_notification, 
+                             args=(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")).start()
         # --- END ASYNC LOGIC ---
 
         return jsonify({'message': 'Settled'}), 200
