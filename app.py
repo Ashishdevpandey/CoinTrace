@@ -231,7 +231,14 @@ def auth():
 
         session['user_id'] = user['id']
         session['user_name'] = user['name']
-        return jsonify({'message': 'Authenticated successfully', 'user': {'id': user['id'], 'name': user['name']}}), 200
+        return jsonify({
+            'message': 'Authenticated successfully', 
+            'user': {
+                'id': user['id'], 
+                'name': user['name'],
+                'email': user['email']
+            }
+        }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -291,6 +298,33 @@ def register():
 def logout():
     session.pop('user_id', None)
     return jsonify({'message': 'Logged out'}), 200
+
+@app.route('/api/profile', methods=['PUT'])
+def update_profile():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    user_id = session['user_id']
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+        
+    db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
+    try:
+        cur = db.cursor()
+        query = 'UPDATE customers SET email = %s WHERE id = %s'
+        if db_type == 'sqlite':
+            query = query.replace('%s', '?')
+            
+        cur.execute(query, (email, user_id))
+        db.commit()
+        cur.close()
+        return jsonify({'message': 'Profile updated successfully', 'email': email}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/dashboard', methods=['GET'])
 def dashboard():

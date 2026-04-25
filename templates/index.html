@@ -1190,6 +1190,10 @@
                 return this.request('/transaction', 'POST', transaction);
             },
 
+            async updateProfile(profileData) {
+                return this.request('/profile', 'PUT', profileData);
+            },
+
             // Friends API
             async getFriends() {
                 return this.request('/friends');
@@ -1833,7 +1837,10 @@
         function loadSettings() {
             if (currentUser) {
                 document.getElementById('settingsName').value = currentUser.name;
-                document.getElementById('settingsEmail').value = currentUser.email || '';
+                // Try to load email from localStorage, fallback to currentUser.email
+                const savedEmail = localStorage.getItem('profile_email_' + currentUser.id);
+                document.getElementById('settingsEmail').value = savedEmail || currentUser.email || '';
+                
                 const savedUpi = localStorage.getItem('upi_id_' + currentUser.id);
                 if (savedUpi) {
                     document.getElementById('settingsUpiId').value = savedUpi;
@@ -1845,7 +1852,16 @@
             event.preventDefault();
             if (currentUser) {
                 const upiVal = document.getElementById('settingsUpiId').value.trim();
+                const emailVal = document.getElementById('settingsEmail').value.trim();
+                
                 localStorage.setItem('upi_id_' + currentUser.id, upiVal);
+                localStorage.setItem('profile_email_' + currentUser.id, emailVal);
+                
+                // Update local currentUser object
+                currentUser.email = emailVal;
+
+                // Sync with Database
+                API.updateProfile({ email: emailVal }).catch(err => console.error('Profile sync failed', err));
 
                 const fileInput = document.getElementById('settingsAvatar');
                 if (fileInput.files && fileInput.files[0]) {
