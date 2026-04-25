@@ -134,6 +134,10 @@ def send_transaction_notification(target_email, friend_name, sender_name, amount
     if not sender_email or not sender_password or not target_email:
         return False
 
+    # Capitalize names for a professional look
+    friend_name = friend_name.title()
+    sender_name = sender_name.title()
+
     message = MIMEMultipart("alternative")
     
     # Dynamic Subject and Body based on transaction type
