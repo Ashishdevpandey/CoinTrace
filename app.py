@@ -127,7 +127,7 @@ def index():
 
 # --- API Endpoints ---
 
-def send_transaction_notification(target_email, friend_name, sender_name, amount, type, net_balance, reason="No reason provided"):
+def send_transaction_notification(target_email, friend_name, sender_name, amount, type, net_balance, reason="No reason provided", history=[]):
     sender_email = os.environ.get('MAIL_USERNAME')
     sender_password = os.environ.get('MAIL_PASSWORD')
     
@@ -137,6 +137,36 @@ def send_transaction_notification(target_email, friend_name, sender_name, amount
     # Capitalize names for a professional look
     friend_name = friend_name.title()
     sender_name = sender_name.title()
+
+    # Generate History Table HTML
+    history_html = ""
+    if history:
+        history_html = """
+        <div style="margin-top: 30px;">
+            <h3 style="color: #1a1a1a; font-size: 18px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Recent History</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                    <tr style="background: #f8fafc; text-align: left;">
+                        <th style="padding: 10px; border-bottom: 1px solid #eee; font-size: 13px;">Date</th>
+                        <th style="padding: 10px; border-bottom: 1px solid #eee; font-size: 13px;">Reason</th>
+                        <th style="padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; text-align: right;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        for txn in history[:10]: # Show last 10
+            color = "#38b000" if txn['type'] == 'lent' else "#d90429"
+            prefix = "+" if txn['type'] == 'lent' else "-"
+            history_html += f"""
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #f1f1f1; font-size: 13px; color: #666;">{txn['date'].split(' ')[0]}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #f1f1f1; font-size: 13px;">{txn['note'] if txn['note'] else 'Transaction'}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #f1f1f1; font-size: 13px; text-align: right; font-weight: bold; color: {color};">
+                        {prefix}₹{txn['amount']:.2f}
+                    </td>
+                </tr>
+            """
+        history_html += "</tbody></table></div>"
 
     message = MIMEMultipart("alternative")
     
@@ -183,6 +213,8 @@ def send_transaction_notification(target_email, friend_name, sender_name, amount
                     {balance_text}
                 </p>
             </div>
+
+            {history_html}
             
             <p style="font-size: 14px; color: #666; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
                 Thank you,<br>
@@ -506,13 +538,16 @@ def add_friend_transaction(friend_id):
             ''', [friend_id, user_id], one=True)
             net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
             
+            # Fetch history for the email
+            history = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s ORDER BY date DESC', [friend_id, user_id])
+            
             # If on Vercel, send synchronously to avoid "freezing"
             if os.environ.get('VERCEL'):
-                send_transaction_notification(friend['email'], friend['name'], user_name, amount, txn_type, net, note)
+                send_transaction_notification(friend['email'], friend['name'], user_name, amount, txn_type, net, note, history)
             else:
                 # Local: Keep it fast with threading
                 threading.Thread(target=send_transaction_notification, 
-                                 args=(friend['email'], friend['name'], user_name, amount, txn_type, net, note)).start()
+                                 args=(friend['email'], friend['name'], user_name, amount, txn_type, net, note, history)).start()
         # --- END LOGIC ---
 
         return jsonify({'message': 'Transaction added'}), 201
@@ -552,11 +587,14 @@ def settle_friend_transaction(txn_id):
             ''', [txn['friend_id'], user_id], one=True)
             net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
                 
+            # Fetch history
+            history = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s ORDER BY date DESC', [txn['friend_id'], user_id])
+                
             if os.environ.get('VERCEL'):
-                send_transaction_notification(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")
+                send_transaction_notification(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement", history)
             else:
                 threading.Thread(target=send_transaction_notification, 
-                                 args=(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")).start()
+                                 args=(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement", history)).start()
         # --- END LOGIC ---
 
         return jsonify({'message': 'Settled'}), 200
