@@ -79,7 +79,7 @@ def init_db():
                 pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
                 double = "REAL"
 
-            cur.execute(f'CREATE TABLE IF NOT EXISTS customers (id {pk}, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
+            cur.execute(f'CREATE TABLE IF NOT EXISTS customers (id {pk}, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT, upi_id TEXT, profile_pic TEXT)')
             cur.execute(f'CREATE TABLE IF NOT EXISTS accounts (id {pk}, customer_id INTEGER, type TEXT, balance {double} DEFAULT 0.0)')
             cur.execute(f'CREATE TABLE IF NOT EXISTS transactions (id {pk}, account_id INTEGER, date TEXT, amount {double}, type TEXT, category TEXT, description TEXT)')
             
@@ -110,12 +110,13 @@ def init_db():
             
             db.commit()
             
-            # Add email column to friends if it doesn't exist (for existing databases)
-            try:
-                cur.execute('ALTER TABLE friends ADD COLUMN email TEXT')
-                db.commit()
-            except:
-                pass # Column already exists
+            # Add missing columns to customers table for existing databases
+            for col in ['upi_id', 'profile_pic']:
+                try:
+                    cur.execute(f'ALTER TABLE customers ADD COLUMN {col} TEXT')
+                    db.commit()
+                except:
+                    pass
             
             cur.close()
         except Exception as e:
@@ -268,7 +269,9 @@ def auth():
             'user': {
                 'id': user['id'], 
                 'name': user['name'],
-                'email': user['email']
+                'email': user['email'],
+                'upi_id': user.get('upi_id', ''),
+                'profile_pic': user.get('profile_pic', '')
             }
         }), 200
 
@@ -300,10 +303,10 @@ def register():
         hashed_password = generate_password_hash(password)
         
         if db_type == 'postgres':
-            cur.execute('INSERT INTO customers (name, email, password) VALUES (%s, %s, %s) RETURNING id', (username.strip(), username.strip(), hashed_password))
+            cur.execute('INSERT INTO customers (name, email, password, upi_id, profile_pic) VALUES (%s, %s, %s, %s, %s) RETURNING id', (username.strip(), username.strip(), hashed_password, '', ''))
             user_id = cur.fetchone()[0]
         else:
-            cur.execute('INSERT INTO customers (name, email, password) VALUES (?, ?, ?)', (username.strip(), username.strip(), hashed_password))
+            cur.execute('INSERT INTO customers (name, email, password, upi_id, profile_pic) VALUES (?, ?, ?, ?, ?)', (username.strip(), username.strip(), hashed_password, '', ''))
             user_id = cur.lastrowid
         
         if db_type == 'postgres':
@@ -321,7 +324,7 @@ def register():
         session['user_id'] = user['id']
         session['user_name'] = user['name']
 
-        return jsonify({'message': 'Created successfully', 'user': {'id': user['id'], 'name': user['name']}}), 201
+        return jsonify({'message': 'Created successfully', 'user': {'id': user['id'], 'name': user['name'], 'email': user['email'], 'upi_id': '', 'profile_pic': ''}}), 201
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -339,6 +342,8 @@ def update_profile():
     user_id = session['user_id']
     data = request.get_json()
     email = data.get('email', '').strip()
+    upi_id = data.get('upi_id', '').strip()
+    profile_pic = data.get('profile_pic', '') # Base64 string
     
     if not email:
         return jsonify({'error': 'Email is required'}), 400
@@ -347,14 +352,19 @@ def update_profile():
     db_type = getattr(g, 'db_type', 'sqlite')
     try:
         cur = db.cursor()
-        query = 'UPDATE customers SET email = %s WHERE id = %s'
+        query = 'UPDATE customers SET email = %s, upi_id = %s, profile_pic = %s WHERE id = %s'
         if db_type == 'sqlite':
             query = query.replace('%s', '?')
             
-        cur.execute(query, (email, user_id))
+        cur.execute(query, (email, upi_id, profile_pic, user_id))
         db.commit()
         cur.close()
-        return jsonify({'message': 'Profile updated successfully', 'email': email}), 200
+        return jsonify({
+            'message': 'Profile updated successfully', 
+            'email': email,
+            'upi_id': upi_id,
+            'profile_pic': profile_pic
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

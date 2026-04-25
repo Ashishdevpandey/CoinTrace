@@ -1755,8 +1755,8 @@
         function updateAvatarDisplay() {
             if (!currentUser) return;
             const avatarDiv = document.getElementById('userAvatar');
-            const savedAvatar = localStorage.getItem('profile_pic_' + currentUser.id);
-            if (savedAvatar) {
+            const savedAvatar = currentUser.profile_pic;
+            if (savedAvatar && savedAvatar !== '') {
                 avatarDiv.innerHTML = `<img src="${savedAvatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 avatarDiv.style.background = 'none';
                 avatarDiv.style.border = '1px solid var(--card-border)';
@@ -1770,39 +1770,47 @@
         function loadSettings() {
             if (currentUser) {
                 document.getElementById('settingsName').value = currentUser.name;
-                // Try to load email from localStorage, fallback to currentUser.email
-                const savedEmail = localStorage.getItem('profile_email_' + currentUser.id);
-                document.getElementById('settingsEmail').value = savedEmail || currentUser.email || '';
-
-                const savedUpi = localStorage.getItem('upi_id_' + currentUser.id);
-                if (savedUpi) {
-                    document.getElementById('settingsUpiId').value = savedUpi;
-                }
+                document.getElementById('settingsEmail').value = currentUser.email || '';
+                document.getElementById('settingsUpiId').value = currentUser.upi_id || '';
             }
         }
 
-        function handleSettingsSave(event) {
+        async function handleSettingsSave(event) {
             event.preventDefault();
             if (currentUser) {
                 const upiVal = document.getElementById('settingsUpiId').value.trim();
                 const emailVal = document.getElementById('settingsEmail').value.trim();
-
-                localStorage.setItem('upi_id_' + currentUser.id, upiVal);
-                localStorage.setItem('profile_email_' + currentUser.id, emailVal);
-
-                // Update local currentUser object
-                currentUser.email = emailVal;
-
-                // Sync with Database
-                API.updateProfile({ email: emailVal }).catch(err => console.error('Profile sync failed', err));
-
                 const fileInput = document.getElementById('settingsAvatar');
+                
+                let profilePicData = currentUser.profile_pic || '';
+
+                const performSave = async (picData) => {
+                    try {
+                        const response = await API.updateProfile({ 
+                            email: emailVal, 
+                            upi_id: upiVal, 
+                            profile_pic: picData 
+                        });
+                        
+                        // Update local currentUser object
+                        currentUser.email = response.email;
+                        currentUser.upi_id = response.upi_id;
+                        currentUser.profile_pic = response.profile_pic;
+                        
+                        updateAvatarDisplay();
+                        showToast('Settings saved and synced successfully!');
+                    } catch (err) {
+                        console.error('Profile sync failed', err);
+                        showToast('Failed to sync profile: ' + err.message, 'error');
+                    }
+                };
+
                 if (fileInput.files && fileInput.files[0]) {
                     const file = fileInput.files[0];
                     const reader = new FileReader();
                     reader.onload = function (e) {
                         const img = new Image();
-                        img.onload = function () {
+                        img.onload = async function () {
                             const canvas = document.createElement('canvas');
                             const maxSize = 200;
                             let width = img.width;
@@ -1823,28 +1831,23 @@
                             const ctx = canvas.getContext('2d');
                             ctx.drawImage(img, 0, 0, width, height);
                             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                            try {
-                                localStorage.setItem('profile_pic_' + currentUser.id, dataUrl);
-                                updateAvatarDisplay();
-                                showToast('Settings saved successfully!');
-                            } catch (err) {
-                                showToast('Error saving image: File too large.', 'error');
-                            }
+                            
+                            await performSave(dataUrl);
                             fileInput.value = '';
                         };
                         img.src = e.target.result;
                     };
                     reader.readAsDataURL(file);
                 } else {
-                    showToast('Settings saved successfully!');
+                    await performSave(profilePicData);
                 }
             }
         }
 
         function generateUPIQR(friendName, amount) {
             if (!currentUser) return;
-            const savedUpi = localStorage.getItem('upi_id_' + currentUser.id);
-            if (!savedUpi) {
+            const savedUpi = currentUser.upi_id;
+            if (!savedUpi || savedUpi === '') {
                 showToast('Please configure your UPI ID in Settings first!', 'error');
                 showSection('settings');
                 return;
