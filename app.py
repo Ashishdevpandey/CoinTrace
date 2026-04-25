@@ -1,6 +1,7 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import sqlite3
 import shutil
 from flask import Flask, render_template, request, jsonify, g, session
 from flask_cors import CORS
@@ -16,22 +17,21 @@ CORS(app)
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
-        # Vercel provides POSTGRES_URL in the environment
         db_url = os.environ.get('POSTGRES_URL')
         
-        # If not on Vercel or POSTGRES_URL is missing, you might need a local fallback
-        # for development, but for now we focus on Vercel persistence.
-        if not db_url:
-            # Fallback for local development if needed, e.g., 'postgresql://user:pass@localhost:5432/db'
-            # For now, we assume it's set on Vercel.
-            raise RuntimeError("POSTGRES_URL environment variable is not set. Please check Vercel Storage settings.")
+        if db_url:
+            # Postgres connection (Production/Vercel)
+            if db_url.startswith('postgres://'):
+                db_url = db_url.replace('postgres://', 'postgresql://', 1)
+            db = g._database = psycopg2.connect(db_url)
+            g.db_type = 'postgres'
+        else:
+            # SQLite connection (Local Development)
+            db_path = os.path.join(os.path.dirname(__file__), 'banking.db')
+            db = g._database = sqlite3.connect(db_path)
+            db.row_factory = sqlite3.Row
+            g.db_type = 'sqlite'
             
-        # psycopg2 can handle 'postgres://' or 'postgresql://' URLs
-        # Vercel URL might be 'postgres://...', psycopg2 prefers 'postgresql://'
-        if db_url.startswith('postgres://'):
-            db_url = db_url.replace('postgres://', 'postgresql://', 1)
-
-        db = g._database = psycopg2.connect(db_url)
     return db
 
 @app.teardown_appcontext
@@ -42,39 +42,54 @@ def close_connection(exception):
 
 def query_db(query, args=(), one=False):
     db = get_db()
-    cur = db.cursor(cursor_factory=RealDictCursor)
-    try:
+    db_type = getattr(g, 'db_type', 'sqlite')
+    
+    # Handle placeholder differences between Postgres (%s) and SQLite (?)
+    if db_type == 'sqlite':
+        query = query.replace('%s', '?')
+        # SQLite Row object needs to be converted to dict for compatibility with RealDictCursor
+        cur = db.execute(query, args)
+        rv = [dict(row) for row in cur.fetchall()]
+    else:
+        cur = db.cursor(cursor_factory=RealDictCursor)
         cur.execute(query, args)
         rv = cur.fetchall()
-        cur.close()
-        return (rv[0] if rv else None) if one else rv
-    except Exception as e:
-        cur.close()
-        print(f"Database error: {e}")
-        raise e
+        
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 def init_db():
     with app.app_context():
         try:
             db = get_db()
+            db_type = getattr(g, 'db_type', 'sqlite')
             cur = db.cursor()
-            # Create tables if they don't exist (Postgres syntax)
-            cur.execute('CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
-            cur.execute('CREATE TABLE IF NOT EXISTS accounts (id SERIAL PRIMARY KEY, customer_id INTEGER, type TEXT, balance DOUBLE PRECISION DEFAULT 0.0)')
-            cur.execute('CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, account_id INTEGER, date TEXT, amount DOUBLE PRECISION, type TEXT, category TEXT, description TEXT)')
+            
+            # Syntax differences for primary keys and types
+            if db_type == 'postgres':
+                pk = "SERIAL PRIMARY KEY"
+                double = "DOUBLE PRECISION"
+            else:
+                pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+                double = "REAL"
+
+            cur.execute(f'CREATE TABLE IF NOT EXISTS customers (id {pk}, name TEXT NOT NULL, email TEXT NOT NULL, password TEXT)')
+            cur.execute(f'CREATE TABLE IF NOT EXISTS accounts (id {pk}, customer_id INTEGER, type TEXT, balance {double} DEFAULT 0.0)')
+            cur.execute(f'CREATE TABLE IF NOT EXISTS transactions (id {pk}, account_id INTEGER, date TEXT, amount {double}, type TEXT, category TEXT, description TEXT)')
+            
             # Friends / Udhar tables
-            cur.execute('''CREATE TABLE IF NOT EXISTS friends (
-                id SERIAL PRIMARY KEY,
+            cur.execute(f'''CREATE TABLE IF NOT EXISTS friends (
+                id {pk},
                 customer_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 phone TEXT,
                 FOREIGN KEY (customer_id) REFERENCES customers(id)
             )''')
-            cur.execute('''CREATE TABLE IF NOT EXISTS friend_transactions (
-                id SERIAL PRIMARY KEY,
+            cur.execute(f'''CREATE TABLE IF NOT EXISTS friend_transactions (
+                id {pk},
                 customer_id INTEGER NOT NULL,
                 friend_id INTEGER NOT NULL,
-                amount DOUBLE PRECISION NOT NULL,
+                amount {double} NOT NULL,
                 type TEXT NOT NULL,
                 note TEXT,
                 date TEXT NOT NULL,
@@ -82,7 +97,13 @@ def init_db():
                 FOREIGN KEY (customer_id) REFERENCES customers(id),
                 FOREIGN KEY (friend_id) REFERENCES friends(id)
             )''')
+            
             db.commit()
+            
+            # Optional: Seed data for new users if the database is brand new
+            # We skip automatic seeding for now as per the "Data Disappearing" issue fix, 
+            # but we ensure the environment is correctly set.
+            
             cur.close()
         except Exception as e:
             print(f"Error initializing DB: {e}")
