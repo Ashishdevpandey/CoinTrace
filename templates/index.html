@@ -1486,11 +1486,11 @@
 
             // Update Tables
             updateTransactionTable(transactions, 'transactionTable', 5);
-            updateTransactionTable(transactions, 'analyticsTable');
         }
 
         function updateTransactionTable(transactions, elementId, limit = null) {
             const tbody = document.getElementById(elementId);
+            if (!tbody) return; // Safety check
             tbody.innerHTML = '';
 
             let displayData = transactions;
@@ -1627,13 +1627,16 @@
         }
 
         function updateCharts(transactions) {
-            const ctxMain = document.getElementById('mainChart').getContext('2d');
-            const ctxPie = document.getElementById('pieChart').getContext('2d');
-            const ctxAnalytics = document.getElementById('analyticsLineChart').getContext('2d');
+            const mainChartEl = document.getElementById('mainChart');
+            const pieChartEl = document.getElementById('pieChart');
+            
+            if (!mainChartEl || !pieChartEl) return;
+
+            const ctxMain = mainChartEl.getContext('2d');
+            const ctxPie = pieChartEl.getContext('2d');
 
             if (charts.main) charts.main.destroy();
             if (charts.pie) charts.pie.destroy();
-            if (charts.analytics) charts.analytics.destroy();
 
             // Process Data for Main Chart (Last 6 Months)
             const months = [];
@@ -1743,54 +1746,6 @@
                 }
             });
 
-            // Analytics Chart (Daily Spending - Last 7 Days)
-            const days = [];
-            const dailySpending = [];
-
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date();
-                d.setDate(d.getDate() - i);
-                days.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
-
-                const dayTransactions = transactions.filter(t => {
-                    const tDate = new Date(t.date);
-                    return tDate.getDate() === d.getDate() &&
-                        tDate.getMonth() === d.getMonth() &&
-                        tDate.getFullYear() === d.getFullYear() &&
-                        t.type === 'debit';
-                });
-
-                const spending = dayTransactions.reduce((sum, t) => sum + t.amount, 0);
-                dailySpending.push(spending);
-            }
-
-            charts.analytics = new Chart(ctxAnalytics, {
-                type: 'bar',
-                data: {
-                    labels: days,
-                    datasets: [{
-                        label: 'Daily Spending',
-                        data: dailySpending,
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: {
-                            grid: { color: 'rgba(0, 0, 0, 0.05)' },
-                            ticks: { color: '#344e41' }
-                        },
-                        x: {
-                            grid: { display: false },
-                            ticks: { color: '#344e41' }
-                        }
-                    }
-                }
-            });
         }
 
         // Initialize
