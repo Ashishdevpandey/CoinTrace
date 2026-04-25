@@ -494,12 +494,11 @@ def add_friend_transaction(friend_id):
         db.commit()
         cur.close()
         
-        # --- NEW: SUPER FAST ASYNC LOGIC ---
+        # --- VERCEL COMPATIBILITY LOGIC ---
         user_name = session.get('user_name', 'User')
         friend = query_db('SELECT * FROM friends WHERE id = %s', [friend_id], one=True)
         
         if friend and friend['email']:
-            # Calculate new net balance for notification (Optimized)
             net_row = query_db('''
                 SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
                 FROM friend_transactions 
@@ -507,10 +506,14 @@ def add_friend_transaction(friend_id):
             ''', [friend_id, user_id], one=True)
             net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
             
-            # Start thread with pre-fetched data
-            threading.Thread(target=send_transaction_notification, 
-                             args=(friend['email'], friend['name'], user_name, amount, txn_type, net, note)).start()
-        # --- END ASYNC LOGIC ---
+            # If on Vercel, send synchronously to avoid "freezing"
+            if os.environ.get('VERCEL'):
+                send_transaction_notification(friend['email'], friend['name'], user_name, amount, txn_type, net, note)
+            else:
+                # Local: Keep it fast with threading
+                threading.Thread(target=send_transaction_notification, 
+                                 args=(friend['email'], friend['name'], user_name, amount, txn_type, net, note)).start()
+        # --- END LOGIC ---
 
         return jsonify({'message': 'Transaction added'}), 201
     except Exception as e:
@@ -539,10 +542,9 @@ def settle_friend_transaction(txn_id):
         db.commit()
         cur.close()
         
-        # --- NEW: SUPER FAST ASYNC LOGIC FOR SETTLE ---
+        # --- VERCEL COMPATIBILITY FOR SETTLE ---
         user_name = session.get('user_name', 'User')
         if friend and friend['email']:
-            # Calculate new net balance (Optimized)
             net_row = query_db('''
                 SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
                 FROM friend_transactions 
@@ -550,10 +552,12 @@ def settle_friend_transaction(txn_id):
             ''', [txn['friend_id'], user_id], one=True)
             net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
                 
-            # Send settlement notification (Async)
-            threading.Thread(target=send_transaction_notification, 
-                             args=(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")).start()
-        # --- END ASYNC LOGIC ---
+            if os.environ.get('VERCEL'):
+                send_transaction_notification(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")
+            else:
+                threading.Thread(target=send_transaction_notification, 
+                                 args=(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")).start()
+        # --- END LOGIC ---
 
         return jsonify({'message': 'Settled'}), 200
     except Exception as e:
