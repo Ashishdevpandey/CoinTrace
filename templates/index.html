@@ -716,9 +716,6 @@
             <a href="#" class="nav-item active" onclick="showSection('dashboard')">
                 <i class="fas fa-home"></i> Dashboard
             </a>
-            <a href="#" class="nav-item" onclick="showSection('analytics')">
-                <i class="fas fa-chart-pie"></i> Analytics
-            </a>
 
             <a href="#" class="nav-item" onclick="showSection('friends')">
                 <i class="fas fa-user-friends"></i> Friends
@@ -803,8 +800,6 @@
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">Recent Transactions</span>
-                    <button class="btn" style="background: transparent; color: var(--accent-color);"
-                        onclick="showSection('analytics')">View All</button>
                 </div>
                 <div class="table-container">
                     <table>
@@ -824,39 +819,6 @@
             </div>
         </div>
 
-        <!-- Analytics Section -->
-        <div id="analytics" class="section" style="display: none;">
-            <div class="grid">
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title">Spending Trends</span>
-                    </div>
-                    <div class="chart-container">
-                        <canvas id="analyticsLineChart"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">Full Transaction History</span>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Transaction</th>
-                                <th>Date</th>
-                                <th>Category</th>
-                                <th>Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody id="analyticsTable">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
 
         <!-- Accounts Section -->
 
@@ -1447,7 +1409,7 @@
                 <td>Saving...</td>
                 <td><i class="fas fa-spinner fa-spin"></i></td>
             `;
-            
+
             // Remove "No transactions" message if it exists
             if (tbody.innerHTML.includes('No transactions recorded')) {
                 tbody.innerHTML = '';
@@ -1460,7 +1422,7 @@
                 await API.addFriendTransaction(friendId, { amount, type, note });
                 // Re-sync with server to get final data (date, ID, etc)
                 await showFriendTransactions(friendId);
-                await loadFriends(); 
+                await loadFriends();
             } catch (e) {
                 console.error('Add friend transaction failed', e);
                 tempRow.remove();
@@ -1613,12 +1575,9 @@
         }
 
         // Listen for back button
-        window.onpopstate = function(event) {
+        window.onpopstate = function (event) {
             if (event.state && event.state.sectionId) {
                 showSection(event.state.sectionId, false);
-            } else if (currentUser) {
-                // Default to dashboard if no state but user is logged in
-                showSection('dashboard', false);
             }
         };
 
@@ -1859,7 +1818,7 @@
                 // Try to load email from localStorage, fallback to currentUser.email
                 const savedEmail = localStorage.getItem('profile_email_' + currentUser.id);
                 document.getElementById('settingsEmail').value = savedEmail || currentUser.email || '';
-                
+
                 const savedUpi = localStorage.getItem('upi_id_' + currentUser.id);
                 if (savedUpi) {
                     document.getElementById('settingsUpiId').value = savedUpi;
@@ -1872,10 +1831,10 @@
             if (currentUser) {
                 const upiVal = document.getElementById('settingsUpiId').value.trim();
                 const emailVal = document.getElementById('settingsEmail').value.trim();
-                
+
                 localStorage.setItem('upi_id_' + currentUser.id, upiVal);
                 localStorage.setItem('profile_email_' + currentUser.id, emailVal);
-                
+
                 // Update local currentUser object
                 currentUser.email = emailVal;
 
