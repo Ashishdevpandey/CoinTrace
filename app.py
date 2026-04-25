@@ -379,14 +379,14 @@ def get_friends():
     friends = query_db('SELECT * FROM friends WHERE customer_id = %s ORDER BY name', [user_id])
     result = []
     for f in friends:
-        # Calculate net balance for this friend
-        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s AND settled = 0', [f['id'], user_id])
-        net = 0.0
-        for t in txns:
-            if t['type'] == 'lent':    # I gave money → they owe me (positive = they owe me)
-                net += t['amount']
-            else:                       # borrowed → I owe them (negative = I owe them)
-                net -= t['amount']
+        # Optimized: Use SQL SUM for balance
+        net_row = query_db('''
+            SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
+            FROM friend_transactions 
+            WHERE friend_id = %s AND customer_id = %s AND settled = 0
+        ''', [f['id'], user_id], one=True)
+        net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
+        
         result.append({'id': f['id'], 'name': f['name'], 'phone': f['phone'], 'email': f.get('email', ''), 'net': round(net, 2)})
     return jsonify(result)
 
@@ -456,12 +456,13 @@ def add_friend_transaction(friend_id):
         db.commit()
         cur.close()
         
-        # Calculate new net balance for notification
-        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s AND settled = 0', [friend_id, user_id])
-        net = 0.0
-        for t in txns:
-            if t['type'] == 'lent': net += t['amount']
-            else: net -= t['amount']
+        # Calculate new net balance for notification (Optimized)
+        net_row = query_db('''
+            SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
+            FROM friend_transactions 
+            WHERE friend_id = %s AND customer_id = %s AND settled = 0
+        ''', [friend_id, user_id], one=True)
+        net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
             
         # Send notification if email exists (Async)
         user_name = session.get('user_name', 'User')
@@ -496,12 +497,13 @@ def settle_friend_transaction(txn_id):
         db.commit()
         cur.close()
         
-        # Calculate new net balance
-        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s AND settled = 0', [txn['friend_id'], user_id])
-        net = 0.0
-        for t in txns:
-            if t['type'] == 'lent': net += t['amount']
-            else: net -= t['amount']
+        # Calculate new net balance (Optimized)
+        net_row = query_db('''
+            SELECT SUM(CASE WHEN type = 'lent' THEN amount ELSE -amount END) as net
+            FROM friend_transactions 
+            WHERE friend_id = %s AND customer_id = %s AND settled = 0
+        ''', [txn['friend_id'], user_id], one=True)
+        net = net_row['net'] if net_row and net_row['net'] is not None else 0.0
             
         # Send settlement notification (Async)
         user_name = session.get('user_name', 'User')

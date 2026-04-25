@@ -1429,13 +1429,38 @@
             if (!friendId || isNaN(amount) || amount <= 0) {
                 return;
             }
+
+            // --- OPTIMISTIC UPDATE: Update UI instantly ---
+            const tbody = document.getElementById('friendTxTable');
+            const tempRow = document.createElement('tr');
+            tempRow.style.opacity = '0.6';
+            tempRow.innerHTML = `
+                <td>${type === 'lent' ? 'I Gave (Lent)' : 'I Took (Borrowed)'}</td>
+                <td style="color: ${type === 'lent' ? 'var(--success-color)' : 'var(--danger-color)'}">
+                    ${type === 'lent' ? '+' : '-'}${amount.toFixed(2)}
+                </td>
+                <td>${note || ''}</td>
+                <td>Saving...</td>
+                <td><i class="fas fa-spinner fa-spin"></i></td>
+            `;
+            
+            // Remove "No transactions" message if it exists
+            if (tbody.innerHTML.includes('No transactions recorded')) {
+                tbody.innerHTML = '';
+            }
+            tbody.insertBefore(tempRow, tbody.firstChild);
+            form.reset();
+            // --- END OPTIMISTIC UPDATE ---
+
             try {
                 await API.addFriendTransaction(friendId, { amount, type, note });
-                form.reset();
+                // Re-sync with server to get final data (date, ID, etc)
                 await showFriendTransactions(friendId);
-                await loadFriends(); // refresh net balances
+                await loadFriends(); 
             } catch (e) {
                 console.error('Add friend transaction failed', e);
+                tempRow.remove();
+                showToast('Failed to save transaction. Please check your connection.', 'error');
             }
         }
 
