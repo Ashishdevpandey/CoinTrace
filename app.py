@@ -3,9 +3,15 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import sqlite3
 import shutil
+import random
+import smtplib
+import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, request, jsonify, g, session
 from flask_cors import CORS
 from dotenv import load_dotenv
+import threading
 
 # Load environment variables from .env file for local development
 load_dotenv()
@@ -83,6 +89,7 @@ def init_db():
                 customer_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 phone TEXT,
+                email TEXT,
                 FOREIGN KEY (customer_id) REFERENCES customers(id)
             )''')
             cur.execute(f'''CREATE TABLE IF NOT EXISTS friend_transactions (
@@ -98,11 +105,17 @@ def init_db():
                 FOREIGN KEY (friend_id) REFERENCES friends(id)
             )''')
             
+            # OTP Verification Table
+            cur.execute(f'CREATE TABLE IF NOT EXISTS otp_verifications (id {pk}, email TEXT NOT NULL, otp TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+            
             db.commit()
             
-            # Optional: Seed data for new users if the database is brand new
-            # We skip automatic seeding for now as per the "Data Disappearing" issue fix, 
-            # but we ensure the environment is correctly set.
+            # Add email column to friends if it doesn't exist (for existing databases)
+            try:
+                cur.execute('ALTER TABLE friends ADD COLUMN email TEXT')
+                db.commit()
+            except:
+                pass # Column already exists
             
             cur.close()
         except Exception as e:
@@ -113,6 +126,78 @@ def index():
     return render_template('index.html')
 
 # --- API Endpoints ---
+
+def send_transaction_notification(target_email, friend_name, sender_name, amount, type, net_balance, reason="No reason provided"):
+    sender_email = os.environ.get('MAIL_USERNAME')
+    sender_password = os.environ.get('MAIL_PASSWORD')
+    
+    if not sender_email or not sender_password or not target_email:
+        return False
+
+    message = MIMEMultipart("alternative")
+    
+    # Dynamic Subject and Body based on transaction type
+    if type == 'lent':
+        subject = f"Money Lent Alert from {sender_name}"
+        action_text = f"{sender_name} lent you ₹{amount:,.2f}"
+    elif type == 'borrowed':
+        subject = f"Money Borrowed Alert from {sender_name}"
+        action_text = f"You borrowed ₹{amount:,.2f} from {sender_name}"
+    else:
+        subject = f"Account Settlement Alert: {sender_name}"
+        action_text = f"A transaction of ₹{amount:,.2f} was settled with {sender_name}"
+
+    # IMPROVED: Explicit Balance Text
+    if net_balance > 0:
+        balance_text = f"Final Status: <strong>You owe {sender_name} ₹{net_balance:,.2f}</strong>"
+    elif net_balance < 0:
+        balance_text = f"Final Status: <strong>{sender_name} owes you ₹{abs(net_balance):,.2f}</strong>"
+    else:
+        balance_text = "Final Status: <strong>All settled! No balance remaining.</strong>"
+
+    message["Subject"] = subject
+    message["From"] = f"{sender_name} via CoinTrace <{sender_email}>"
+    message["To"] = target_email
+
+    html = f"""
+    <html>
+      <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1a1a1a; line-height: 1.6; background-color: #f9f9f9;">
+        <div style="max-width: 600px; margin: auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h2 style="color: #38b000; margin: 0; font-size: 28px;">CoinTrace</h2>
+                <p style="color: #666; margin-top: 5px;">Smart Finance Tracking</p>
+            </div>
+            
+            <p style="font-size: 16px;">Hey <strong>{friend_name}</strong>,</p>
+            <p style="font-size: 16px;">Greetings from <strong>CoinTrace</strong>!</p>
+            
+            <div style="margin: 30px 0; padding: 25px; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #38b000;">
+                <p style="margin: 0; font-size: 18px; color: #0b1a14;">
+                    {action_text} for reason: <strong>{reason if reason else 'General Transaction'}</strong>.
+                </p>
+                <p style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #1a1a1a;">
+                    {balance_text}
+                </p>
+            </div>
+            
+            <p style="font-size: 14px; color: #666; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
+                Thank you,<br>
+                <strong>Team CoinTrace</strong>
+            </p>
+        </div>
+      </body>
+    </html>
+    """
+    message.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, target_email, message.as_string())
+        return True
+    except Exception as e:
+        print(f"Error sending notification: {e}")
+        return False
 
 @app.route('/api/auth', methods=['POST'])
 def auth():
@@ -125,9 +210,14 @@ def auth():
         return jsonify({'error': 'Username and password are required'}), 400
 
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
-        # Check if user exists (Case Insensitive using LOWER in Postgres)
-        user = query_db('SELECT * FROM customers WHERE LOWER(name) = LOWER(%s)', [username.strip()], one=True)
+        # Check if user exists (Case Insensitive using LOWER)
+        query = 'SELECT * FROM customers WHERE LOWER(name) = LOWER(%s)'
+        if db_type == 'sqlite':
+            query = query.replace('%s', '?')
+            
+        user = query_db(query, [username.strip()], one=True)
         
         if not user:
             return jsonify({'error': 'Account not found. Please register.'}), 404
@@ -153,22 +243,38 @@ def register():
         return jsonify({'error': 'Username and password are required'}), 400
 
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
-        user = query_db('SELECT * FROM customers WHERE LOWER(name) = LOWER(%s)', [username.strip()], one=True)
+        query_check = 'SELECT * FROM customers WHERE LOWER(name) = LOWER(%s)'
+        if db_type == 'sqlite':
+            query_check = query_check.replace('%s', '?')
+            
+        user = query_db(query_check, [username.strip()], one=True)
         if user:
             return jsonify({'error': 'Username already exists'}), 400
 
         cur = db.cursor()
         hashed_password = generate_password_hash(password)
-        cur.execute('INSERT INTO customers (name, email, password) VALUES (%s, %s, %s) RETURNING id', (username.strip(), username.strip(), hashed_password))
-        user_id = cur.fetchone()[0]
         
-        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (%s, %s, %s)', (user_id, 'Checking', 0.0))
-        cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (%s, %s, %s)', (user_id, 'Savings', 0.0))
+        if db_type == 'postgres':
+            cur.execute('INSERT INTO customers (name, email, password) VALUES (%s, %s, %s) RETURNING id', (username.strip(), username.strip(), hashed_password))
+            user_id = cur.fetchone()[0]
+        else:
+            cur.execute('INSERT INTO customers (name, email, password) VALUES (?, ?, ?)', (username.strip(), username.strip(), hashed_password))
+            user_id = cur.lastrowid
+        
+        if db_type == 'postgres':
+            cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (%s, %s, %s)', (user_id, 'Checking', 0.0))
+            cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (%s, %s, %s)', (user_id, 'Savings', 0.0))
+        else:
+            cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Checking', 0.0))
+            cur.execute('INSERT INTO accounts (customer_id, type, balance) VALUES (?, ?, ?)', (user_id, 'Savings', 0.0))
+            
         db.commit()
         cur.close()
         
-        user = query_db('SELECT * FROM customers WHERE id = %s', [user_id], one=True)
+        # Re-query user for session
+        user = query_db(query_check, [username.strip()], one=True)
         session['user_id'] = user['id']
         session['user_name'] = user['name']
 
@@ -240,15 +346,22 @@ def add_transaction():
         new_balance = current_balance - amount
         
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
         cur = db.cursor()
-        cur.execute('UPDATE accounts SET balance = %s WHERE id = %s', (new_balance, account_id))
+        
+        update_query = 'UPDATE accounts SET balance = %s WHERE id = %s'
+        insert_query = 'INSERT INTO transactions (account_id, date, amount, type, category, description) VALUES (%s, %s, %s, %s, %s, %s)'
+        if db_type == 'sqlite':
+            update_query = update_query.replace('%s', '?')
+            insert_query = insert_query.replace('%s', '?')
+
+        cur.execute(update_query, (new_balance, account_id))
         
         # Insert transaction
         import datetime
         date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cur.execute('INSERT INTO transactions (account_id, date, amount, type, category, description) VALUES (%s, %s, %s, %s, %s, %s)',
-                    (account_id, date_str, amount, type, category, description))
+        cur.execute(insert_query, (account_id, date_str, amount, type, category, description))
         
         db.commit()
         cur.close()
@@ -274,7 +387,7 @@ def get_friends():
                 net += t['amount']
             else:                       # borrowed → I owe them (negative = I owe them)
                 net -= t['amount']
-        result.append({'id': f['id'], 'name': f['name'], 'phone': f['phone'], 'net': round(net, 2)})
+        result.append({'id': f['id'], 'name': f['name'], 'phone': f['phone'], 'email': f.get('email', ''), 'net': round(net, 2)})
     return jsonify(result)
 
 @app.route('/api/friends', methods=['POST'])
@@ -285,16 +398,22 @@ def add_friend():
     data = request.get_json()
     name = data.get('name', '').strip()
     phone = data.get('phone', '').strip()
+    email = data.get('email', '').strip()
     if not name:
         return jsonify({'error': 'Name is required'}), 400
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
         cur = db.cursor()
-        cur.execute('INSERT INTO friends (customer_id, name, phone) VALUES (%s, %s, %s) RETURNING id', (user_id, name, phone))
-        friend_id = cur.fetchone()[0]
+        if db_type == 'postgres':
+            cur.execute('INSERT INTO friends (customer_id, name, phone, email) VALUES (%s, %s, %s, %s) RETURNING id', (user_id, name, phone, email))
+            friend_id = cur.fetchone()[0]
+        else:
+            cur.execute('INSERT INTO friends (customer_id, name, phone, email) VALUES (?, ?, ?, ?)', (user_id, name, phone, email))
+            friend_id = cur.lastrowid
         db.commit()
         cur.close()
-        return jsonify({'id': friend_id, 'name': name, 'phone': phone, 'net': 0.0}), 201
+        return jsonify({'id': friend_id, 'name': name, 'phone': phone, 'email': email, 'net': 0.0}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -321,12 +440,35 @@ def add_friend_transaction(friend_id):
     import datetime
     date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
+        # Get friend info first for email
+        friend = query_db('SELECT * FROM friends WHERE id = %s', [friend_id], one=True)
+        if not friend:
+            return jsonify({'error': 'Friend not found'}), 404
+            
         cur = db.cursor()
-        cur.execute('INSERT INTO friend_transactions (customer_id, friend_id, amount, type, note, date) VALUES (%s, %s, %s, %s, %s, %s)',
-                    (user_id, friend_id, amount, txn_type, note, date_str))
+        insert_query = 'INSERT INTO friend_transactions (customer_id, friend_id, amount, type, note, date) VALUES (%s, %s, %s, %s, %s, %s)'
+        if db_type == 'sqlite':
+            insert_query = insert_query.replace('%s', '?')
+            
+        cur.execute(insert_query, (user_id, friend_id, amount, txn_type, note, date_str))
         db.commit()
         cur.close()
+        
+        # Calculate new net balance for notification
+        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s AND settled = 0', [friend_id, user_id])
+        net = 0.0
+        for t in txns:
+            if t['type'] == 'lent': net += t['amount']
+            else: net -= t['amount']
+            
+        # Send notification if email exists (Async)
+        user_name = session.get('user_name', 'User')
+        if friend['email']:
+            threading.Thread(target=send_transaction_notification, 
+                             args=(friend['email'], friend['name'], user_name, amount, txn_type, net, note)).start()
+            
         return jsonify({'message': 'Transaction added'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -337,11 +479,36 @@ def settle_friend_transaction(txn_id):
         return jsonify({'error': 'Unauthorized'}), 401
     user_id = session['user_id']
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
+        # Get transaction and friend info for notification
+        txn = query_db('SELECT * FROM friend_transactions WHERE id = %s', [txn_id], one=True)
+        if not txn:
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        friend = query_db('SELECT * FROM friends WHERE id = %s', [txn['friend_id']], one=True)
+        
         cur = db.cursor()
-        cur.execute('UPDATE friend_transactions SET settled = 1 WHERE id = %s AND customer_id = %s', (txn_id, user_id))
+        query = 'UPDATE friend_transactions SET settled = 1 WHERE id = %s AND customer_id = %s'
+        if db_type == 'sqlite':
+            query = query.replace('%s', '?')
+        cur.execute(query, (txn_id, user_id))
         db.commit()
         cur.close()
+        
+        # Calculate new net balance
+        txns = query_db('SELECT * FROM friend_transactions WHERE friend_id = %s AND customer_id = %s AND settled = 0', [txn['friend_id'], user_id])
+        net = 0.0
+        for t in txns:
+            if t['type'] == 'lent': net += t['amount']
+            else: net -= t['amount']
+            
+        # Send settlement notification (Async)
+        user_name = session.get('user_name', 'User')
+        if friend and friend['email']:
+            threading.Thread(target=send_transaction_notification, 
+                             args=(friend['email'], friend['name'], user_name, txn['amount'], f"Settled ({txn['type']})", net, "Account Settlement")).start()
+            
         return jsonify({'message': 'Settled'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -352,12 +519,19 @@ def delete_friend(friend_id):
         return jsonify({'error': 'Unauthorized'}), 401
     user_id = session['user_id']
     db = get_db()
+    db_type = getattr(g, 'db_type', 'sqlite')
     try:
         cur = db.cursor()
+        del_txns = 'DELETE FROM friend_transactions WHERE friend_id = %s AND customer_id = %s'
+        del_friend = 'DELETE FROM friends WHERE id = %s AND customer_id = %s'
+        if db_type == 'sqlite':
+            del_txns = del_txns.replace('%s', '?')
+            del_friend = del_friend.replace('%s', '?')
+            
         # Delete related transactions first
-        cur.execute('DELETE FROM friend_transactions WHERE friend_id = %s AND customer_id = %s', (friend_id, user_id))
+        cur.execute(del_txns, (friend_id, user_id))
         # Delete the friend
-        cur.execute('DELETE FROM friends WHERE id = %s AND customer_id = %s', (friend_id, user_id))
+        cur.execute(del_friend, (friend_id, user_id))
         db.commit()
         cur.close()
         return jsonify({'message': 'Friend removed'}), 200

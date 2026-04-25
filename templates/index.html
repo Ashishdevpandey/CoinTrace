@@ -3,14 +3,15 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>CoinTrace | Data Warehouse</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --bg-color: #fffdf7;
-            --bg-gradient: 
+            --bg-gradient:
                 radial-gradient(ellipse at top left, rgba(82, 183, 136, 0.6), transparent 50%),
                 radial-gradient(ellipse at bottom right, rgba(255, 183, 3, 0.4), transparent 50%),
                 radial-gradient(ellipse at top right, rgba(251, 133, 0, 0.3), transparent 50%),
@@ -45,22 +46,27 @@
             width: 6px;
             height: 6px;
         }
+
         ::-webkit-scrollbar-track {
             background: transparent;
         }
+
         ::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.2);
         }
 
-        html, body {
+        html,
+        body {
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; /* Lock viewport completely */
+            overflow: hidden;
+            /* Lock viewport completely */
         }
 
         body {
@@ -151,13 +157,27 @@
         }
 
         @keyframes fadeInDown {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .section {
@@ -180,7 +200,7 @@
             justify-content: center;
             font-weight: bold;
             box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
-            border: 2px solid rgba(255,255,255,0.1);
+            border: 2px solid rgba(255, 255, 255, 0.1);
         }
 
         /* Dashboard Grid */
@@ -276,7 +296,8 @@
             table-layout: auto;
         }
 
-        th, td {
+        th,
+        td {
             padding: 1rem 0.75rem;
             text-align: left;
             border-bottom: 1px solid rgba(0, 0, 0, 0.05);
@@ -308,13 +329,28 @@
             justify-content: center;
             margin-right: 1rem;
             font-size: 1.1rem;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
         }
 
-        .icon-shopping { background: var(--danger-bg); color: var(--danger-color); }
-        .icon-food { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-        .icon-transport { background: rgba(59, 130, 246, 0.15); color: var(--accent-color); }
-        .icon-salary { background: var(--success-bg); color: var(--success-color); }
+        .icon-shopping {
+            background: var(--danger-bg);
+            color: var(--danger-color);
+        }
+
+        .icon-food {
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+        }
+
+        .icon-transport {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-color);
+        }
+
+        .icon-salary {
+            background: var(--success-bg);
+            color: var(--success-color);
+        }
 
         /* Modal */
         .modal {
@@ -341,8 +377,13 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
         .modal-content {
@@ -360,7 +401,9 @@
         }
 
         @keyframes popIn {
-            to { transform: scale(1); }
+            to {
+                transform: scale(1);
+            }
         }
 
         /* Forms */
@@ -455,7 +498,7 @@
             padding: 1rem 2rem;
             border-radius: 2rem;
             border: 1px solid var(--card-border);
-            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
             transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s ease;
             opacity: 0;
             z-index: 9999;
@@ -481,7 +524,9 @@
             transition: color 0.2s;
         }
 
-        .menu-toggle:hover { color: var(--accent-color); }
+        .menu-toggle:hover {
+            color: var(--accent-color);
+        }
 
         .sidebar-overlay {
             display: none;
@@ -519,8 +564,13 @@
                 transform: translateX(280px);
             }
 
-            .menu-toggle { display: block; }
-            .grid[style*="grid-template-columns: 1fr 1fr;"] { grid-template-columns: 1fr !important; }
+            .menu-toggle {
+                display: block;
+            }
+
+            .grid[style*="grid-template-columns: 1fr 1fr;"] {
+                grid-template-columns: 1fr !important;
+            }
         }
 
         @media (max-width: 768px) {
@@ -528,12 +578,14 @@
                 padding: 1.25rem 0.75rem;
                 padding-bottom: calc(2rem + env(safe-area-inset-bottom));
             }
+
             .header {
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 1rem;
                 margin-bottom: 2rem;
             }
+
             .user-profile {
                 width: 100%;
                 justify-content: space-between;
@@ -541,18 +593,22 @@
                 padding: 0.75rem 1rem;
                 border-radius: 1rem;
             }
+
             .grid {
                 grid-template-columns: 1fr;
                 gap: 1rem;
             }
+
             .card {
                 padding: 1.5rem 1.25rem;
                 border-radius: 1.25rem;
             }
+
             .card-value {
                 font-size: 1.85rem;
                 letter-spacing: -0.02em;
             }
+
             .fab {
                 bottom: calc(1.5rem + env(safe-area-inset-bottom));
                 right: 1rem;
@@ -560,23 +616,28 @@
                 height: 60px;
                 box-shadow: 0 8px 24px rgba(56, 176, 0, 0.4);
             }
+
             .table-container {
                 margin: 0 -0.75rem;
                 padding: 0 0.75rem;
                 border-radius: 0;
             }
-            
-            th, td {
+
+            th,
+            td {
                 padding: 1rem 0.5rem;
                 font-size: 0.8rem;
             }
-            
+
             /* UDHAR Transaction Form Flex Fix */
-            #addFriendTxnForm > div {
+            #addFriendTxnForm>div {
                 flex-direction: column;
                 gap: 1rem;
             }
-            #addFriendTxnForm select, #addFriendTxnForm input, #addFriendTxnForm button {
+
+            #addFriendTxnForm select,
+            #addFriendTxnForm input,
+            #addFriendTxnForm button {
                 width: 100% !important;
                 flex: none !important;
                 padding: 0.875rem !important;
@@ -810,7 +871,8 @@
                     <div class="form-group">
                         <label class="form-label">Profile Picture</label>
                         <input type="file" class="form-input" id="settingsAvatar" accept="image/*">
-                        <small style="color: var(--text-secondary); display: block; margin-top: 0.5rem;">Square images work best.</small>
+                        <small style="color: var(--text-secondary); display: block; margin-top: 0.5rem;">Square images
+                            work best.</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Full Name</label>
@@ -854,6 +916,10 @@
                         <label class="form-label">Phone (optional)</label>
                         <input type="text" class="form-input" name="phone" placeholder="Enter phone">
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Email (for notifications)</label>
+                        <input type="email" class="form-input" name="email" placeholder="Enter email">
+                    </div>
                     <button type="submit" class="btn btn-primary">Add Friend</button>
                 </form>
                 <!-- Friends Table -->
@@ -876,7 +942,9 @@
             <div class="card" id="friendTransactions" style="max-width: 800px; display: none; margin-top: 2rem;">
                 <div class="card-header">
                     <span class="card-title" id="friendTxTitle">Friend Transactions</span>
-                    <button class="btn" style="background: transparent; color: var(--text-secondary); padding: 0.25rem 0.5rem;" onclick="document.getElementById('friendTransactions').style.display='none'">
+                    <button class="btn"
+                        style="background: transparent; color: var(--text-secondary); padding: 0.25rem 0.5rem;"
+                        onclick="document.getElementById('friendTransactions').style.display='none'">
                         <i class="fas fa-times"></i> Close
                     </button>
                 </div>
@@ -886,8 +954,10 @@
                             <option value="lent">I Gave (Lent)</option>
                             <option value="borrowed">I Took (Borrowed)</option>
                         </select>
-                        <input type="number" step="0.01" class="form-input" name="amount" placeholder="Amount" style="flex: 1; min-width: 100px;" required>
-                        <input type="text" class="form-input" name="note" placeholder="Note (optional)" style="flex: 2; min-width: 150px;">
+                        <input type="number" step="0.01" class="form-input" name="amount" placeholder="Amount"
+                            style="flex: 1; min-width: 100px;" required>
+                        <input type="text" class="form-input" name="note" placeholder="Note (optional)"
+                            style="flex: 2; min-width: 150px;">
                         <button type="submit" class="btn btn-primary" style="flex: 1; min-width: 100px;">Add</button>
                     </div>
                 </form>
@@ -921,11 +991,13 @@
             <form onsubmit="handleLogin(event)">
                 <div class="form-group">
                     <label class="form-label">Username</label>
-                    <input type="text" class="form-input" name="username" required placeholder="Enter your username" autocomplete="username">
+                    <input type="text" class="form-input" name="username" required placeholder="Enter your username"
+                        autocomplete="username">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Password</label>
-                    <input type="password" class="form-input" name="password" required placeholder="Enter your password" autocomplete="current-password">
+                    <input type="password" class="form-input" name="password" required placeholder="Enter your password"
+                        autocomplete="current-password">
                 </div>
                 <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
                     <input type="checkbox" id="rememberMe" name="rememberMe">
@@ -950,12 +1022,14 @@
             <p class="auth-subtitle">Join us to start tracking your finances</p>
             <form onsubmit="handleRegister(event)">
                 <div class="form-group">
-                    <label class="form-label">Username</label>
-                    <input type="text" class="form-input" name="username" required placeholder="Choose a username" autocomplete="username">
+                    <label class="form-label">Username / Email</label>
+                    <input type="text" class="form-input" name="username" required placeholder="Choose a username"
+                        autocomplete="username">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Password</label>
-                    <input type="password" class="form-input" name="password" required placeholder="Create a password" autocomplete="new-password">
+                    <input type="password" class="form-input" name="password" required placeholder="Create a password"
+                        autocomplete="new-password">
                 </div>
                 <div id="registerError" style="color: var(--danger-color); margin-top: 0.5rem; display: none;"></div>
                 <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Create Account</button>
@@ -1060,7 +1134,7 @@
             const iconColor = type === 'success' ? 'var(--success-color)' : 'var(--danger-color)';
             const iconClass = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
             toast.innerHTML = `<i class="fas ${iconClass}" style="color: ${iconColor}; font-size: 1.25rem;"></i> <span>${message}</span>`;
-            
+
             toast.offsetHeight; // force reflow
             toast.classList.add('show');
             if (toast.timeoutId) clearTimeout(toast.timeoutId);
@@ -1223,7 +1297,7 @@
                 document.getElementById('mainContent').style.display = 'block';
                 document.querySelector('.fab').style.display = 'flex';
                 showSection('dashboard');
-                
+
                 // Reset form
                 form.reset();
             } catch (error) {
@@ -1243,8 +1317,8 @@
                     tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No friends added yet. Start by adding one above!</td></tr>`;
                 } else {
                     friends.forEach(f => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
                         <td>${f.name}</td>
                         <td>${f.phone || ''}</td>
                         <td style="color: ${f.net > 0 ? 'var(--success-color)' : (f.net < 0 ? 'var(--danger-color)' : 'inherit')}">
@@ -1258,8 +1332,8 @@
                             </button>
                         </td>
                     `;
-                    tbody.appendChild(row);
-                });
+                        tbody.appendChild(row);
+                    });
                 }
             } catch (e) {
                 console.error('Failed to load friends', e);
@@ -1271,13 +1345,14 @@
             const form = event.target;
             const name = form.name.value.trim();
             const phone = form.phone.value.trim();
+            const email = form.email.value.trim();
             try {
-                await API.addFriend({ name, phone });
+                await API.addFriend({ name, phone, email });
                 form.reset();
                 await loadFriends();
                 setTimeout(() => {
                     const mainContent = document.querySelector('.main-content');
-                    if(mainContent) {
+                    if (mainContent) {
                         mainContent.scrollTo({ top: mainContent.scrollHeight, behavior: 'smooth' });
                     }
                 }, 100);
@@ -1293,10 +1368,10 @@
                     const response = await fetch(`/api/friends/${friendId}`, { method: 'DELETE' });
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error || 'Failed to delete friend');
-                    
+
                     showToast(`${name} removed successfully`);
                     await loadFriends();
-                    
+
                     // If we were viewing this friend, clear the view
                     const container = document.getElementById('friendTransactions');
                     if (container && container.dataset.activeFriendId == friendId) {
@@ -1320,8 +1395,8 @@
                     tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No transactions recorded.</td></tr>`;
                 } else {
                     txns.forEach(t => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
                         <td>${t.type === 'lent' ? 'I Gave (Lent)' : 'I Took (Borrowed)'}</td>
                         <td style="color: ${t.type === 'lent' ? 'var(--success-color)' : 'var(--danger-color)'}">
                             ${t.type === 'lent' ? '+' : '-'}${t.amount.toFixed(2)}
@@ -1330,8 +1405,8 @@
                         <td>${t.date}</td>
                         <td>${t.settled ? '✅' : '<button class="btn" onclick="settleTxn(' + t.id + ')">Settle</button>'}</td>
                     `;
-                    tbody.appendChild(row);
-                });
+                        tbody.appendChild(row);
+                    });
                 }
                 // Store current friend id for adding transaction
                 const container = document.getElementById('friendTransactions');
@@ -1751,9 +1826,9 @@
                 if (fileInput.files && fileInput.files[0]) {
                     const file = fileInput.files[0];
                     const reader = new FileReader();
-                    reader.onload = function(e) {
+                    reader.onload = function (e) {
                         const img = new Image();
-                        img.onload = function() {
+                        img.onload = function () {
                             const canvas = document.createElement('canvas');
                             const maxSize = 200;
                             let width = img.width;
@@ -1803,12 +1878,12 @@
             const upiLink = `upi://pay?pa=${savedUpi}&pn=${currentUser.name}&am=${amount}&cu=INR`;
             const encodedUrl = encodeURIComponent(upiLink);
             const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodedUrl}`;
-            
+
             const qrModal = document.getElementById('qrModal');
             document.getElementById('qrScanAmount').textContent = amount.toFixed(2);
             document.getElementById('qrFriendName').textContent = friendName;
             document.getElementById('qrImage').src = qrImageUrl;
-            
+
             qrModal.style.display = 'flex';
             setTimeout(() => qrModal.classList.add('active'), 10);
         }
@@ -1825,13 +1900,15 @@
         <div class="modal-content" style="text-align: center;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h3 class="card-title">Collect via UPI</h3>
-                <button class="btn" style="background: transparent; color: var(--text-secondary); padding: 0;" onclick="closeQrModal()">
+                <button class="btn" style="background: transparent; color: var(--text-secondary); padding: 0;"
+                    onclick="closeQrModal()">
                     <i class="fas fa-times" style="font-size: 1.5rem;"></i>
                 </button>
             </div>
             <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
                 Scan QR to receive <br>
-                <span class="card-value" style="color: var(--success-color); font-size: 2rem;">₹<span id="qrScanAmount"></span></span>
+                <span class="card-value" style="color: var(--success-color); font-size: 2rem;">₹<span
+                        id="qrScanAmount"></span></span>
                 <br>from <strong style="color: var(--text-primary);" id="qrFriendName"></strong>
             </p>
             <div style="background: white; padding: 1.5rem; border-radius: 1rem; display: inline-block;">
