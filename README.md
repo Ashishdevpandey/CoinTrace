@@ -1,6 +1,18 @@
 # CoinTrace 🪙
 
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white)
+
 CoinTrace is a modern, full-stack personal finance dashboard designed to help you track your income, expenses, and account balances with ease. It features a sleek, dark-themed UI and interactive charts for data visualization.
+
+## 🚀 Quick Links
+
+- **🌐 Live Demo**: [coin-trace-sandy.vercel.app](https://coin-trace-sandy.vercel.app/#)
+- **📱 Android App**: [Download APK from Releases](https://github.com/Ashishdevpandey/CoinTrace/releases)
+
+---
 
 ## Features
 
