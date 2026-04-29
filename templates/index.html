@@ -1472,9 +1472,18 @@
             const { accounts, transactions } = data;
 
             // Calculate Totals
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+
             const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+            
             const monthlySpending = transactions
-                .filter(t => t.type === 'debit') // Simple filter, ideally check date
+                .filter(t => {
+                    if (t.type !== 'debit') return false;
+                    const tDate = new Date(t.date);
+                    return tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
+                })
                 .reduce((sum, t) => sum + t.amount, 0);
 
             // Update Cards
@@ -1638,28 +1647,30 @@
             if (charts.main) charts.main.destroy();
             if (charts.pie) charts.pie.destroy();
 
-            // Process Data for Main Chart (Last 6 Months)
-            const months = [];
+            // Process Data for Main Chart (Last 14 Days)
+            const days = [];
             const incomeData = [];
             const expenseData = [];
 
-            for (let i = 5; i >= 0; i--) {
+            for (let i = 13; i >= 0; i--) {
                 const d = new Date();
-                d.setMonth(d.getMonth() - i);
-                const monthName = d.toLocaleString('default', { month: 'short' });
-                months.push(monthName);
+                d.setDate(d.getDate() - i);
+                const dayLabel = d.toLocaleDateString('default', { day: 'numeric', month: 'short' });
+                days.push(dayLabel);
 
-                // Filter transactions for this month
-                const monthTransactions = transactions.filter(t => {
+                // Filter transactions for this specific day
+                const dayTransactions = transactions.filter(t => {
                     const tDate = new Date(t.date);
-                    return tDate.getMonth() === d.getMonth() && tDate.getFullYear() === d.getFullYear();
+                    return tDate.getDate() === d.getDate() && 
+                           tDate.getMonth() === d.getMonth() && 
+                           tDate.getFullYear() === d.getFullYear();
                 });
 
-                const income = monthTransactions
+                const income = dayTransactions
                     .filter(t => t.type === 'credit')
                     .reduce((sum, t) => sum + t.amount, 0);
 
-                const expense = monthTransactions
+                const expense = dayTransactions
                     .filter(t => t.type === 'debit')
                     .reduce((sum, t) => sum + t.amount, 0);
 
@@ -1685,7 +1696,7 @@
             charts.main = new Chart(ctxMain, {
                 type: 'line',
                 data: {
-                    labels: months,
+                    labels: days,
                     datasets: [{
                         label: 'Income',
                         data: incomeData,

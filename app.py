@@ -439,8 +439,17 @@ def add_transaction():
         cur.execute(update_query, (new_balance, account_id))
         
         # Insert transaction
+        # Handle optional custom date
+        custom_date = data.get('date')
         import datetime
-        date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if custom_date:
+            # If user provides YYYY-MM-DD, we append current time for consistency
+            now_time = datetime.datetime.now().strftime('%H:%M:%S')
+            date_str = f'{custom_date} {now_time}'
+        else:
+            date_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # Insert transaction
         cur.execute(insert_query, (account_id, date_str, amount, type, category, description))
         
         db.commit()
